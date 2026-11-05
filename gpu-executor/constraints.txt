@@ -1,4 +1,4 @@
-# Copy of ../dots.tts/constraints/recommended.txt (team-pinned versions).
+# Copy of dots.tts's constraints/recommended.txt (team-pinned versions).
 # Only change: gradio 6.17.0 -> 6.17.3, because 6.17.0 is no longer on PyPI.
 
 # Recommended versions for reproducible installs.

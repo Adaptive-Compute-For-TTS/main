@@ -42,7 +42,8 @@ from adaptive_nfe import generate_fixed_nfe
 from adaptive_nfe.executor import Executor
 from dots_tts.runtime import DotsTtsRuntime
 
-PROMPTS_DEFAULT = Path(__file__).resolve().parents[2] / "ml-evals" / "benchmark_prompts_v1.json"
+# ml-evals cloned next to this monorepo: <workspace>/ml-evals, <workspace>/main/gpu-executor/scripts/
+PROMPTS_DEFAULT = Path(__file__).resolve().parents[3] / "ml-evals" / "benchmark_prompts_v1.json"
 
 
 def audio_sha256(audio: torch.Tensor) -> str:

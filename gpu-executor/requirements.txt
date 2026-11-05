@@ -1,10 +1,10 @@
 # Installed by scripts/setup_env.sh (torch must be installed first from the right index).
 # Pins: pip install -r requirements.txt -c constraints.txt
 
-# dots.tts from the local clone, editable so we can add the scheduler hook to its source.
--e ../dots.tts
+# dots.tts is installed by scripts/setup_env.sh from the local clone (editable, so the hook patch in
+# its source is what runs). Default location ../../dots.tts, override with DOTS_TTS_DIR.
 
-# This repo's own package (src/adaptive_nfe), editable.
+# This component's package (src/adaptive_nfe), editable.
 -e .
 
 # Equivalence tests.
