@@ -1,0 +1,14 @@
+# Installed by scripts/setup_env.sh (torch must be installed first from the right index).
+# Pins: pip install -r requirements.txt -c constraints.txt
+
+# dots.tts from the local clone, editable so we can add the scheduler hook to its source.
+-e ../dots.tts
+
+# This repo's own package (src/adaptive_nfe), editable.
+-e .
+
+# Equivalence tests.
+pytest
+
+# Charts (scripts/plot_results.py).
+matplotlib
