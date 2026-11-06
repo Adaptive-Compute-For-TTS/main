@@ -1,0 +1,18 @@
+PASS  identical clip: 1.0000
+PASS  Atharv matches itself best: self 0.969 vs closest other (Moira) 0.854
+PASS  Daniel matches itself best: self 0.968 vs closest other (Manas) 0.748
+PASS  Karen matches itself best: self 0.949 vs closest other (Tessa) 0.813
+PASS  Manas matches itself best: self 0.932 vs closest other (Daniel) 0.748
+PASS  Moira matches itself best: self 0.969 vs closest other (Tessa) 0.947
+PASS  Rishi matches itself best: self 0.969 vs closest other (Atharv) 0.804
+PASS  Tessa matches itself best: self 0.974 vs closest other (Moira) 0.947
+PASS  average gap: same-voice 0.961 vs different 0.679 (gap 0.282)
+note  most similar different voices: Moira & Tessa at 0.947
+PASS  format: 8 kHz: 0.9854 vs original
+PASS  format: 44.1 kHz: 0.9999 vs original
+PASS  format: stereo: 1.0000 vs original
+PASS  format: half volume: 0.9991 vs original
+PASS  rejects silence: (near-)silent audio
+PASS  rejects too short: shorter than 0.5s
+
+21 clips, 21 same-voice pairs, 189 different-voice pairs

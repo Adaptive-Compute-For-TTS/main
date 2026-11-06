@@ -1,0 +1,19 @@
+Real-voice results (2 speakers x 3 sentences, recorded on Mac Voice Memos)
+
+Atharv vs Atharv (different sentences): mean 0.969  (min 0.961, max 0.976, n=3)
+Manas  vs Manas  (different sentences): mean 0.932  (min 0.910, max 0.955, n=3)
+Atharv vs Manas  (all pairs)          : mean 0.730  (min 0.667, max 0.791, n=9)
+Atharv vs Manas  (same sentence)      : mean 0.732  (min 0.672, max 0.791, n=3)
+
+Lowest same-person score : 0.910
+Highest cross-person score: 0.791
+Separation (lowest same - highest cross): +0.118
+
+Full matrix:
+          Atharv_1  Atharv_2  Atharv_3  Manas_1   Manas_2   Manas_3   
+Atharv_1  1.000     0.976     0.969     0.672     0.745     0.720     
+Atharv_2  0.976     1.000     0.961     0.720     0.791     0.780     
+Atharv_3  0.969     0.961     1.000     0.667     0.740     0.733     
+Manas_1   0.672     0.720     0.667     1.000     0.955     0.930     
+Manas_2   0.745     0.791     0.740     0.955     1.000     0.910     
+Manas_3   0.720     0.780     0.733     0.930     0.910     1.000     
