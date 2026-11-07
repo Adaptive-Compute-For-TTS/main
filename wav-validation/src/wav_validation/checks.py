@@ -94,3 +94,15 @@ def count_non_finite(mono: np.ndarray) -> int:
 def is_too_short(n_samples: int, sample_rate: int, t: Thresholds = DEFAULT) -> bool:
     """Same rule as speaker_sim.py: fewer samples than min_seconds of audio."""
     return n_samples < sample_rate * t.min_seconds
+
+
+def peak_and_rms(mono: np.ndarray) -> Tuple[float, float]:
+    """(max |x|, root-mean-square); (0, 0) for empty audio."""
+    if mono.size == 0:
+        return 0.0, 0.0
+    return float(np.abs(mono).max()), float(np.sqrt(np.mean(mono.astype(np.float64) ** 2)))
+
+
+def is_silent(peak: float, rms: float, t: Thresholds = DEFAULT) -> bool:
+    """Same rule as speaker_sim.py / build_run_json.py: a failed generation, not a quiet voice."""
+    return peak < t.min_peak or rms < t.min_rms

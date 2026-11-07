@@ -1,7 +1,7 @@
 import numpy as np
 
-from synth import SR, clean
-from wav_validation.checks import Thresholds, count_non_finite, is_too_short
+from synth import SR, clean, silence, tone
+from wav_validation.checks import Thresholds, count_non_finite, is_silent, is_too_short, peak_and_rms
 
 def test_clean_audio_has_no_non_finite_samples():
     assert count_non_finite(clean()) == 0
@@ -23,3 +23,30 @@ def test_too_short_boundary_is_half_a_second():
 
 def test_too_short_respects_custom_threshold():
     assert is_too_short(SR, SR, Thresholds(min_seconds=2.0))
+
+
+def test_peak_and_rms_of_a_sine():
+    peak, rms = peak_and_rms(tone(1.0, amp=0.5))
+    assert abs(peak - 0.5) < 1e-3
+    assert abs(rms - 0.5 / np.sqrt(2)) < 1e-3
+
+
+def test_peak_and_rms_of_empty_audio():
+    assert peak_and_rms(np.zeros(0, dtype=np.float32)) == (0.0, 0.0)
+
+
+def test_digital_silence_is_silent():
+    assert is_silent(*peak_and_rms(silence(1.0)))
+
+
+def test_very_quiet_tone_is_silent_but_normal_speech_level_is_not():
+    assert is_silent(*peak_and_rms(tone(1.0, amp=0.005)))  # peak below 0.01
+    assert not is_silent(*peak_and_rms(clean()))
+
+
+def test_one_click_in_silence_is_still_silent_by_rms():
+    audio = silence(1.0)
+    audio[0] = 0.05  # peak passes, RMS ~ 0.05 / sqrt(48000) ~ 2e-4 ... still above 1e-4
+    assert not is_silent(*peak_and_rms(audio))
+    audio[0] = 0.02  # RMS ~ 9e-5 < 1e-4
+    assert is_silent(*peak_and_rms(audio))
