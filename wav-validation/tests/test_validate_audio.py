@@ -80,3 +80,12 @@ def test_stereo_input_is_reported_as_two_channels():
     stereo = np.stack([clean(), clean()], axis=1)
     r = validate_audio(stereo, SR)
     assert r["ok"] and r["checks"]["channels"] == 2
+
+
+def test_peak_is_reported_at_full_precision_so_reports_round_once():
+    # Found on the archive: 0.15155029 rounded to 6 then 4 digits gave 0.1515, not 0.1516.
+    audio = clean()
+    audio[1000] = np.float32(0.1515502930)
+    audio = audio * (0.1515502930 / np.abs(audio).max())
+    r = validate_audio(audio.astype(np.float32), SR)
+    assert round(r["checks"]["peak"], 4) == round(float(np.abs(audio.astype(np.float32)).max()), 4) == 0.1516

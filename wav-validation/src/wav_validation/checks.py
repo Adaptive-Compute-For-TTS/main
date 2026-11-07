@@ -237,11 +237,14 @@ def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] =
         "flags": flags,
         "signal_ok": None if measured["clipped_samples"] is None else is_signal_ok(flags),
         "checks": {
-            "duration_s": _r(duration_s),
+            # Full precision: rounding here and again in a report double-rounds (0.15155029 -> 0.15155
+            # -> 0.1515 instead of 0.1516). The silence values below are whole frames, so rounding
+            # them only removes float noise like 0.30000000000000004.
+            "duration_s": float(duration_s),
             "sample_rate": sample_rate,
             "channels": channels,
-            "peak": _r(peak),
-            "rms": _r(rms),
+            "peak": peak,
+            "rms": rms,
             "non_finite_samples": non_finite,
             "clipped_samples": measured["clipped_samples"],
             "leading_silence_s": _r(measured["leading_silence_s"]),
