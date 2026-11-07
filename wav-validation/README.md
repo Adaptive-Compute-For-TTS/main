@@ -1,34 +1,55 @@
 # wav-validation
 
-Checks whether a generated WAV is usable. Owner: Nick Kim.
+Checks every generated clip before it's stored or scored. Owner: Nick Kim.
 
-Status: **imported, not yet refactored.** The files here are copied unchanged from
-`nicholaskim17/watai_exp` (`experiments/clean_samples/`, commit `7555334`). The next step is
-turning the batch script into a reusable `validate_wav()` that the GPU worker can call on each
-`audio.wav` (see `gpu-workers/README.md`).
+## Where it sits
 
-## What's here
+In the system diagram, WAV Validation comes right after Local GPU Execution:
 
-| File | What it is |
-| --- | --- |
-| `flag_wav_runs.py` | Flags every archived NFE benchmark WAV as `clean_candidate`, `truncated_at_cap` or `contaminated_continuation`, with signal checks. Batch script; paths are specific to the watai_exp archive. |
-| `wav_flags.csv` | Its output: one row per archived WAV (1,028 rows). `quality-evals/speaker_sim/build_run_json.py --flags` reads this file. |
-| `run_summary.json` | Per-NFE and per-length-bucket medians for the two full runs. |
-
-## Flags in `wav_flags.csv`
-
-- `contaminated_continuation`: the run passed the reference transcript as continuation context, so the reference intro can leak into the output.
-- `truncated_at_cap`: stopped at `max_generate_length` (80 patches = 12.8 s), usually mid-sentence.
-- `clean_candidate`: x-vector conditioning and ended before the cap.
-
-`signal_ok` additionally requires no clipping, peak <= 0.95, leading silence < 0.5 s, trailing silence >= 0.05 s and no internal gap > 1.0 s.
-
-## Rerunning the imported script
-
-It only works inside the watai_exp repo, which has `experiments/nfe_benchmark_runs/` and `experiments/benchmark_prompts_v1.csv`:
-
-```bash
-python experiments/clean_samples/flag_wav_runs.py
+```
+Local GPU Execution ──► WAV Validation ──► Local WAV Storage ──► audio_path saved to SQLite ──► FastAPI results
+                                     └──► Quality Evaluation (only clips that passed)
 ```
 
-Requires `numpy` and `soundfile`.
+For each run, the GPU worker hands over the audio it just generated. This package checks it:
+- **If it passes:** the WAV is saved to storage, the run's `audio_path` points at it, and the clip goes on to quality evaluation.
+- **If it fails:** the run is marked failed with the reason. The WAV is kept in a `_rejected/` folder for debugging, but it is never served or scored.
+
+It only needs `numpy` and `soundfile` (no torch), and works on Python 3.9 and later, so the worker and the backend can both import it.
+
+## What it checks
+
+Every flag is either **invalid** (the run fails) or a **caution** (reported, but the run still succeeds).
+
+| flag | severity | when |
+|---|---|---|
+| `missing_audio` | invalid | the WAV file isn't on disk (file checks only) |
+| `unreadable_audio` | invalid | the file can't be decoded (file checks only) |
+| `non_finite` | invalid | any NaN or infinite sample (a numerical blow-up; the executor writes float32) |
+| `too_short` | invalid | shorter than 0.5 s |
+| `silent` | invalid | peak below 0.01 (about -40 dBFS) or RMS below 1e-4 |
+| `truncated_at_cap` | invalid | generation hit `max_generate_length`, so the sentence is probably cut off |
+| `clipped` | caution | any sample at full scale (abs value ≥ 0.999) |
+| `too_loud` | caution | peak above 0.95 |
+| `leading_silence` | caution | starts with 0.5 s or more of silence |
+| `abrupt_end` | caution | less than 0.05 s of silence at the end |
+| `long_gap` | caution | a pause longer than 1.0 s in the middle |
+
+The thresholds are the team's existing numbers, not new ones:
+- `too_short` and `silent` are the speaker-similarity scorer's own rules (`quality-evals/speaker_sim/speaker_sim.py`), so a clip that passes here can always be scored.
+- The five cautions are the `signal_ok` rules from the benchmark's `flag_wav_runs.py`.
+- `tests/test_thresholds.py` fails if either source changes without this package.
+
+Flag names shared with `quality-evals/speaker_sim/build_run_json.py` mean the same thing there.
+
+How a few of the checks work:
+- **Cut-off detection:** with the executor's patch count it is exact (`num_patches >= max_generate_length`). With only a file and a cap, it falls back to the old rule: duration within 10 ms of `max_generate_length × 0.16 s`.
+- **Silence layout:** silence is measured in 20 ms frames, and a frame counts as silent when it is more than 40 dB below the loudest frame.
+- **Short-circuiting:** a clip that is non-finite, too short or silent isn't measured further.
+
+### Agreement with the old benchmark labels
+
+On the 1,028 archived benchmark WAVs (`scripts/check_against_archive.py`):
+- Every measurement, `at_cap` and `signal_ok` value matches `wav_flags.csv`.
+- The x-vector runs split exactly as before: the 324 `clean_candidate` clips pass and the 162 cut-off clips fail.
+- It also catches 4 near-silent clips (peak about 0.0016) that the old script had no check for. All four were already excluded as continuation-mode output.
