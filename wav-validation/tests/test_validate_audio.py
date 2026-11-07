@@ -70,7 +70,7 @@ def test_custom_thresholds_are_used_and_reported():
     assert r["thresholds"]["min_seconds"] == 2.0
 
 
-@pytest.mark.parametrize("bad_sr", [0, -1, 1.5, True])
+@pytest.mark.parametrize("bad_sr", [0, -1, 1.5, True, None, "48000", float("nan"), float("inf")])
 def test_bad_sample_rate_raises(bad_sr):
     with pytest.raises(ValueError):
         validate_audio(clean(), bad_sr)

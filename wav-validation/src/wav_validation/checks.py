@@ -206,7 +206,11 @@ def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] =
     """
     from wav_validation import __version__
 
-    if isinstance(sample_rate, bool) or int(sample_rate) != sample_rate or sample_rate <= 0:
+    try:
+        good_rate = not isinstance(sample_rate, bool) and int(sample_rate) == sample_rate and sample_rate > 0
+    except (TypeError, ValueError, OverflowError):  # None, "abc", nan, inf
+        good_rate = False
+    if not good_rate:
         raise ValueError(f"sample_rate must be a positive integer, got {sample_rate!r}")
     sample_rate = int(sample_rate)
     t = thresholds
