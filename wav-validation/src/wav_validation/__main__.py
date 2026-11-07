@@ -1,14 +1,17 @@
 """Check WAV files from the command line (e.g. on the GPU box after a test generation).
 
     python -m wav_validation audio.wav runs/
+    python -m wav_validation runs/ --max-generate-length 500 --json > report.json
 
 Directories are searched recursively for *.wav. Prints OK or FAIL per file with its flags and a
-summary; exits 1 if any file fails.
+summary (with --json: full results as JSON on stdout, summary on stderr); exits 1 if any file fails.
+--max-generate-length turns on the cut-off check (from duration, since a file has no patch count).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter
 from pathlib import Path
@@ -38,6 +41,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="python -m wav_validation", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("paths", nargs="+", type=Path, help="WAV files and/or directories")
+    p.add_argument("--max-generate-length", type=int, default=None,
+                   help="generation cap in patches (0.16 s each) to check for cut-off audio")
+    p.add_argument("--json", action="store_true", help="print full results as JSON")
     a = p.parse_args(argv)
 
     files = expand(a.paths)
@@ -46,15 +52,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
     failed = 0
     flag_counts: Counter = Counter()
+    results = []
     for path in files:
-        result = validate_wav(path)
+        result = validate_wav(path, max_generate_length=a.max_generate_length)
         failed += not result["ok"]
         flag_counts.update(result["flags"])
-        print(line(path, result))
+        if a.json:
+            results.append({"path": str(path), **result})
+        else:
+            print(line(path, result))
     summary = f"{len(files)} files: {len(files) - failed} ok, {failed} failed"
     if flag_counts:
         summary += " (" + ", ".join(f"{flag} {n}" for flag, n in flag_counts.most_common()) + ")"
-    print(summary)
+    if a.json:
+        print(json.dumps(results, indent=2))
+        print(summary, file=sys.stderr)
+    else:
+        print(summary)
     return 1 if failed else 0
 
 

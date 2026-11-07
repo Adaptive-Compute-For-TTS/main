@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 
@@ -48,3 +49,22 @@ def test_directory_is_searched_recursively_and_summarised(tmp_path, capsys):
 def test_empty_directory_is_an_error(tmp_path, capsys):
     assert main([str(tmp_path)]) == 1
     assert "no .wav files" in capsys.readouterr().err
+
+
+def test_max_generate_length_turns_on_the_cut_off_check(tmp_path, capsys):
+    path = write(tmp_path / "capped.wav", join(silence(0.1), tone(12.7)))  # 12.8 s = 80 patches
+    assert main([str(path)]) == 0  # no cap given: can't tell
+    assert main([str(path), "--max-generate-length", "80"]) == 1
+    assert "truncated_at_cap" in capsys.readouterr().out.splitlines()[-2]
+
+
+def test_json_output_is_parseable_and_summary_goes_to_stderr(tmp_path, capsys):
+    good = write(tmp_path / "good.wav", clean())
+    bad = write(tmp_path / "quiet.wav", silence(1.0))
+    assert main([str(good), str(bad), "--json"]) == 1
+    captured = capsys.readouterr()
+    results = json.loads(captured.out)
+    assert [r["path"] for r in results] == [str(good), str(bad)]
+    assert [r["ok"] for r in results] == [True, False]
+    assert results[1]["flags"] == ["silent"]
+    assert captured.err.strip() == "2 files: 1 ok, 1 failed (silent 1)"
