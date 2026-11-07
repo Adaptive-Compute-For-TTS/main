@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import numpy as np
@@ -85,3 +86,20 @@ def test_unsafe_run_id_is_refused_before_anything_is_written(tmp_path):
     with pytest.raises(ValueError):
         validate_and_store(clean(), SR, "../escape", tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_validation_json_is_written_next_to_the_wav(tmp_path):
+    r = validate_and_store(clean(), SR, "run-5", tmp_path)
+    saved = json.loads((tmp_path / "run-5" / "validation.json").read_text())
+    assert saved == r and saved["run_id"] == "run-5"
+
+
+def test_rejected_clip_also_gets_validation_json(tmp_path):
+    validate_and_store(silence(1.0), SR, "run-6", tmp_path)
+    saved = json.loads((tmp_path / "_rejected" / "run-6" / "validation.json").read_text())
+    assert saved["flags"] == ["silent"] and saved["audio_path"] is None
+
+
+def test_run_folder_has_only_the_two_files(tmp_path):
+    validate_and_store(clean(), SR, "run-7", tmp_path)
+    assert sorted(p.name for p in (tmp_path / "run-7").iterdir()) == ["audio.wav", "validation.json"]

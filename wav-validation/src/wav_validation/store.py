@@ -9,6 +9,7 @@ Layout under storage_dir:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -52,12 +53,29 @@ def write_wav_atomic(path: Path, audio: Any, sample_rate: int) -> Path:
     return path
 
 
+def write_text_atomic(path: Path, text: str) -> Path:
+    """Same temp-file + rename pattern as write_wav_atomic, for validation.json."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    return path
+
+
 def validate_and_store(audio: Any, sample_rate: int, run_id: str, storage_dir: Union[str, Path], *,
                        num_patches: Optional[int] = None, max_generate_length: Optional[int] = None,
                        thresholds: Thresholds = DEFAULT) -> Dict[str, Any]:
     """Validate a freshly generated clip and save it to Local WAV Storage.
 
+    Writes audio.wav and validation.json (this return value) into the run's folder.
     Returns validate_audio()'s result plus:
+      run_id       as given
       audio_path   absolute path of the stored WAV if the clip passed (the run's audio_path), else None
       stored_path  where the WAV was written; failed clips go to _rejected/<run_id>/ for debugging
     """
@@ -67,4 +85,6 @@ def validate_and_store(audio: Any, sample_rate: int, run_id: str, storage_dir: U
     storage = Path(storage_dir).expanduser().resolve()
     folder = storage / run_id if result["ok"] else storage / REJECTED_DIR / run_id
     wav = write_wav_atomic(folder / "audio.wav", audio, sample_rate)
-    return {**result, "audio_path": str(wav) if result["ok"] else None, "stored_path": str(wav)}
+    out = {**result, "run_id": run_id, "audio_path": str(wav) if result["ok"] else None, "stored_path": str(wav)}
+    write_text_atomic(folder / "validation.json", json.dumps(out, indent=2) + "\n")
+    return out
