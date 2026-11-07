@@ -172,9 +172,10 @@ def cap_check(duration_s: float, num_patches: Optional[int], max_generate_length
     max_generate_length must be the number of patches the model was allowed to *generate*. That is
     the runtime's max_generate_length (rt.max_generate_length, default 500) in x-vector mode (no
     prompt_text), which the team uses. In continuation mode (prompt_text passed), dots.tts counts
-    the reference audio's patches against the same cap, so pass the cap minus those patches
-    (ceil(reference samples / 7680)): the archived continuation runs stopped at 9.12 s (57 patches
-    = 80 - 23), not 12.8 s.
+    the reference audio's patches against the same cap, so pass the cap minus those patches. dots.tts
+    counts them after trimming the reference's leading/trailing silence (librosa top_db=30) and
+    resampling to 48 kHz: ceil(trimmed samples / 7680). For abhi1.wav that is 23 (24 untrimmed),
+    which is why the archived continuation runs stopped at 9.12 s (57 = 80 - 23), not 12.8 s.
     """
     if max_generate_length is None:
         return {"cap_s": None, "at_cap": None, "cap_source": None}

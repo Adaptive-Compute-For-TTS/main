@@ -45,7 +45,9 @@ Flag names shared with `quality-evals/speaker_sim/build_run_json.py` mean the sa
 How a few of the checks work:
 - **Cut-off detection:** with the executor's patch count it is exact (`num_patches >= max_generate_length`). Each patch is 0.16 s of audio; in gpu-executor's own results `audio_s` is exactly `num_patches × 0.16` for every row. With only a file and a cap, it falls back to the old rule: duration within 10 ms of `max_generate_length × 0.16 s`.
   - `max_generate_length` must be how many patches the model was allowed to *generate*. In x-vector mode (no `prompt_text`, which the team uses) that is just `rt.max_generate_length` (dots.tts default 500).
-  - In continuation mode (`prompt_text` passed), dots.tts counts the reference clip's patches against the same cap, so pass the cap minus `ceil(reference samples / 7680)`. Otherwise cut-offs are missed. This is why the archived continuation runs stopped at 9.12 s (57 = 80 − 23 patches) while the x-vector runs stopped at 12.8 s.
+  - In continuation mode (`prompt_text` passed), dots.tts counts the reference clip's patches against the same cap, so pass the cap minus those patches. Otherwise cut-offs are missed.
+  - dots.tts counts the reference *after* trimming its leading/trailing silence (librosa `top_db=30`) and resampling to 48 kHz: `ceil(trimmed samples / 7680)`. For `abhi1.wav` that is 23 patches; counting the untrimmed file gives 24, which would wrongly flag a natural 56-patch clip.
+  - This is why the archived continuation runs stopped at 9.12 s (57 = 80 − 23 patches) while the x-vector runs stopped at 12.8 s.
 - **Silence layout:** silence is measured in 20 ms frames, and a frame counts as silent when it is more than 40 dB below the loudest frame.
 - **Short-circuiting:** a clip that is non-finite, too short or silent isn't measured further.
 
