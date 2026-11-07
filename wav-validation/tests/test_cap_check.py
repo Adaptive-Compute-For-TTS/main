@@ -23,3 +23,18 @@ def test_no_cap_known_means_no_answer():
 
 def test_default_benchmark_cap_of_500_patches_is_80_seconds():
     assert cap_check(10.0, num_patches=62, max_generate_length=500)["cap_s"] == 80.0
+
+
+def test_duration_fallback_when_no_patch_count():
+    c = cap_check(12.8, num_patches=None, max_generate_length=80)
+    assert c == {"cap_s": 12.8, "at_cap": True, "cap_source": "duration"}
+
+
+def test_duration_fallback_tolerance_is_10_ms():
+    # Not exactly 12.79: 12.8 - 0.01 is 12.790000000000001 in floating point (same in the old script).
+    assert cap_check(12.795, None, 80)["at_cap"] is True
+    assert cap_check(12.785, None, 80)["at_cap"] is False
+
+
+def test_neither_given_skips_the_check():
+    assert cap_check(12.8, None, None)["at_cap"] is None

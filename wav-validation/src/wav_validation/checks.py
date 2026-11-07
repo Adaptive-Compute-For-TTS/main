@@ -158,14 +158,17 @@ def cap_check(duration_s: float, num_patches: Optional[int], max_generate_length
     """Did generation stop because it hit max_generate_length (so the speech is likely cut off)?
 
     With num_patches from the executor (generate_fixed_nfe(...).num_patches) the answer is exact.
+    Without it, fall back to flag_wav_runs.py's rule: duration within cap_tolerance_s of the cap.
     Without max_generate_length there is nothing to compare against, so at_cap is None.
     """
     if max_generate_length is None:
         return {"cap_s": None, "at_cap": None, "cap_source": None}
-    cap_s = round(max_generate_length * t.patch_seconds, 6)
+    cap_s = max_generate_length * t.patch_seconds
     if num_patches is not None:
-        return {"cap_s": cap_s, "at_cap": num_patches >= max_generate_length, "cap_source": "patches"}
-    return {"cap_s": cap_s, "at_cap": None, "cap_source": None}
+        at_cap, source = num_patches >= max_generate_length, "patches"
+    else:
+        at_cap, source = duration_s >= cap_s - t.cap_tolerance_s, "duration"
+    return {"cap_s": round(cap_s, 6), "at_cap": bool(at_cap), "cap_source": source}
 
 
 def is_signal_ok(flags: list) -> bool:
