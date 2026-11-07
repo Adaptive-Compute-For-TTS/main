@@ -8,9 +8,11 @@ benchmark's flag_wav_runs.py.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
+import soundfile as sf
 
 MAX_CHANNELS = 16
 
@@ -252,3 +254,32 @@ def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] =
         "thresholds": t.as_dict(),
         "version": __version__,
     }
+
+
+def _file_problem(flag: str, num_patches: Optional[int], max_generate_length: Optional[int],
+                  t: Thresholds) -> Dict[str, Any]:
+    """Result for a file that couldn't be read: same keys as validate_audio, nothing measured."""
+    from wav_validation import __version__
+
+    checks = {key: None for key in (
+        "duration_s", "sample_rate", "channels", "peak", "rms", "non_finite_samples", "clipped_samples",
+        "leading_silence_s", "trailing_silence_s", "longest_gap_s", "cap_s", "at_cap", "cap_source")}
+    checks["num_patches"] = None if num_patches is None else int(num_patches)
+    checks["max_generate_length"] = None if max_generate_length is None else int(max_generate_length)
+    return {"ok": False, "flags": [flag], "signal_ok": None, "checks": checks,
+            "thresholds": t.as_dict(), "version": __version__}
+
+
+def validate_wav(path: Union[str, Path], *, num_patches: Optional[int] = None,
+                 max_generate_length: Optional[int] = None, thresholds: Thresholds = DEFAULT) -> Dict[str, Any]:
+    """validate_audio() for a file on disk (CLI, tests, offline checks). Never raises for bad files:
+    a missing or undecodable file comes back as missing_audio / unreadable_audio."""
+    path = Path(path)
+    if not path.exists():
+        return _file_problem("missing_audio", num_patches, max_generate_length, thresholds)
+    try:
+        audio, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+    except Exception:  # soundfile raises its own error types for corrupt or non-audio files
+        return _file_problem("unreadable_audio", num_patches, max_generate_length, thresholds)
+    return validate_audio(audio, sample_rate, num_patches=num_patches,
+                          max_generate_length=max_generate_length, thresholds=thresholds)
