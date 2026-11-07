@@ -168,6 +168,13 @@ def cap_check(duration_s: float, num_patches: Optional[int], max_generate_length
     With num_patches from the executor (generate_fixed_nfe(...).num_patches) the answer is exact.
     Without it, fall back to flag_wav_runs.py's rule: duration within cap_tolerance_s of the cap.
     Without max_generate_length there is nothing to compare against, so at_cap is None.
+
+    max_generate_length must be the number of patches the model was allowed to *generate*. That is
+    the runtime's max_generate_length (rt.max_generate_length, default 500) in x-vector mode (no
+    prompt_text), which the team uses. In continuation mode (prompt_text passed), dots.tts counts
+    the reference audio's patches against the same cap, so pass the cap minus those patches
+    (ceil(reference samples / 7680)): the archived continuation runs stopped at 9.12 s (57 patches
+    = 80 - 23), not 12.8 s.
     """
     if max_generate_length is None:
         return {"cap_s": None, "at_cap": None, "cap_source": None}
