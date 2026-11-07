@@ -174,3 +174,81 @@ def cap_check(duration_s: float, num_patches: Optional[int], max_generate_length
 def is_signal_ok(flags: list) -> bool:
     """The old wav_flags.csv `signal_ok` column: no caution flag."""
     return not any(FLAGS[f][0] == CAUTION for f in flags)
+
+
+def _r(x: Optional[float]) -> Optional[float]:
+    return None if x is None else round(float(x), 6)
+
+
+def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] = None,
+                   max_generate_length: Optional[int] = None, thresholds: Thresholds = DEFAULT) -> Dict[str, Any]:
+    """Check one generated clip in memory. This is what the GPU worker calls right after generation.
+
+    audio: 1-D samples or (frames, channels), e.g. result.output["audio"].float().cpu().squeeze().numpy()
+    num_patches / max_generate_length: from the executor and the generation config; enable the
+    cut-off check (see cap_check).
+
+    Returns plain JSON types (draft shape for the run's result["validation"]):
+      ok          False if any flag is "invalid": fail the run, don't serve or score the clip
+      flags       every flag that applies, in FLAGS order
+      signal_ok   no caution flags (None when the clip couldn't be measured)
+      checks      the measurements behind the flags
+      thresholds  the numbers used
+      version     wav-validation version
+    """
+    from wav_validation import __version__
+
+    if isinstance(sample_rate, bool) or int(sample_rate) != sample_rate or sample_rate <= 0:
+        raise ValueError(f"sample_rate must be a positive integer, got {sample_rate!r}")
+    sample_rate = int(sample_rate)
+    t = thresholds
+    mono, channels = to_mono(audio)
+    duration_s = mono.size / sample_rate
+    non_finite = count_non_finite(mono)
+    flags = []
+    peak = rms = None
+    measured: Dict[str, Any] = {"clipped_samples": None, "leading_silence_s": None,
+                                "trailing_silence_s": None, "longest_gap_s": None}
+
+    # Content checks short-circuit like build_run_json.audio_flags: there is no point measuring
+    # silence layout in a clip that is broken, too short or silent.
+    if non_finite:
+        flags.append("non_finite")
+    elif is_too_short(mono.size, sample_rate, t):
+        flags.append("too_short")
+    else:
+        peak, rms = peak_and_rms(mono)
+        if is_silent(peak, rms, t):
+            flags.append("silent")
+        else:
+            measured = signal_measurements(mono, sample_rate, t)
+            flags += caution_flags(peak, measured, t)
+
+    cap = cap_check(duration_s, num_patches, max_generate_length, t)
+    if cap["at_cap"]:
+        flags.append("truncated_at_cap")
+
+    order = list(FLAGS)
+    flags.sort(key=order.index)
+    return {
+        "ok": not any(FLAGS[f][0] == INVALID for f in flags),
+        "flags": flags,
+        "signal_ok": None if measured["clipped_samples"] is None else is_signal_ok(flags),
+        "checks": {
+            "duration_s": _r(duration_s),
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "peak": _r(peak),
+            "rms": _r(rms),
+            "non_finite_samples": non_finite,
+            "clipped_samples": measured["clipped_samples"],
+            "leading_silence_s": _r(measured["leading_silence_s"]),
+            "trailing_silence_s": _r(measured["trailing_silence_s"]),
+            "longest_gap_s": _r(measured["longest_gap_s"]),
+            "num_patches": None if num_patches is None else int(num_patches),
+            "max_generate_length": None if max_generate_length is None else int(max_generate_length),
+            **cap,
+        },
+        "thresholds": t.as_dict(),
+        "version": __version__,
+    }
