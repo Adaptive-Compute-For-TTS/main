@@ -44,9 +44,10 @@ def test_very_quiet_tone_is_silent_but_normal_speech_level_is_not():
     assert not is_silent(*peak_and_rms(clean()))
 
 
-def test_one_click_in_silence_is_still_silent_by_rms():
+def test_single_click_in_silence_is_judged_by_rms():
+    # Both clicks pass the peak rule (>= 0.01); the RMS rule decides.
     audio = silence(1.0)
-    audio[0] = 0.05  # peak passes, RMS ~ 0.05 / sqrt(48000) ~ 2e-4 ... still above 1e-4
+    audio[0] = 0.05  # RMS = 0.05 / sqrt(48000) ~ 2.3e-4 >= 1e-4: not silent
     assert not is_silent(*peak_and_rms(audio))
-    audio[0] = 0.02  # RMS ~ 9e-5 < 1e-4
+    audio[0] = 0.02  # RMS ~ 9.1e-5 < 1e-4: silent
     assert is_silent(*peak_and_rms(audio))
