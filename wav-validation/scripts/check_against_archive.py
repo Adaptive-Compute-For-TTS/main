@@ -34,18 +34,31 @@ NUMERIC = {
 }
 
 
+# The old script had no content checks, so it measured silence layout on clips the new library
+# rejects outright (e.g. near-silent output). For those, only the basics are compared.
+NEW_CONTENT_FLAGS = ("non_finite", "too_short", "silent")
+BASIC = ("duration_seconds", "peak")
+
+
+def newly_invalid(result: dict) -> list:
+    return [f for f in result["flags"] if f in NEW_CONTENT_FLAGS]
+
+
 def compare_row(row: dict, result: dict) -> list:
     """Names of the columns where the new result disagrees with the old CSV row."""
     bad = []
     checks = result["checks"]
+    skip_signal = bool(newly_invalid(result))
     for column, (key, digits) in NUMERIC.items():
+        if skip_signal and column not in BASIC:
+            continue
         new = checks[key]
         old = float(row[column])
         if new is None or (round(new, digits) if digits is not None else new) != old:
             bad.append(column)
     if str(checks["at_cap"]) != row["at_cap"]:
         bad.append("at_cap")
-    if str(result["signal_ok"]) != row["signal_ok"]:
+    if not skip_signal and str(result["signal_ok"]) != row["signal_ok"]:
         bad.append("signal_ok")
     return bad
 
@@ -62,6 +75,7 @@ def main(argv=None) -> int:
         rows = list(csv.DictReader(f))
 
     mismatches = Counter()
+    caught = []
     shown = 0
     for row in rows:
         result = validate_wav(archive / row["local_path"], max_generate_length=int(row["max_generate_length"]))
@@ -69,12 +83,19 @@ def main(argv=None) -> int:
             bad = [result["flags"][0]]
         else:
             bad = compare_row(row, result)
+            if newly_invalid(result):
+                caught.append((row, newly_invalid(result)))
         mismatches.update(bad)
         if bad and shown < a.show:
             shown += 1
             print(f"MISMATCH {row['local_path']}: {', '.join(bad)}")
 
     print(f"{len(rows)} rows compared")
+    if caught:
+        print(f"{len(caught)} clips newly rejected by content checks the old script didn't have "
+              "(expected; only duration, peak and at_cap compared for these):")
+        for row, flags in caught:
+            print(f"  {', '.join(flags)}: {row['local_path']} (old status {row['status']}, peak {row['peak']})")
     if not mismatches:
         print("all agree")
         return 0

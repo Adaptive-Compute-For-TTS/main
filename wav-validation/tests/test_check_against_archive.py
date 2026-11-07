@@ -32,6 +32,7 @@ def old_row(archive: Path, rel: str, max_generate_length: int = 80) -> dict:
         "longest_internal_gap_seconds": str(round(c["longest_internal_gap_seconds"], 2)),
         "at_cap": str(c["duration_seconds"] >= cap - old.CAP_TOLERANCE_SECONDS),
         "signal_ok": str(old.signal_ok(c)),
+        "status": "clean_candidate",
     }
 
 
@@ -73,3 +74,12 @@ def test_reports_missing_wavs(tmp_path, capsys):
     flags = write_flags(tmp_path / "wav_flags.csv", [row])
     assert checker.main(["--archive", str(tmp_path), "--flags", str(flags)]) == 1
     assert "missing_audio" in capsys.readouterr().out
+
+
+def test_near_silent_clip_is_reported_as_newly_caught_not_a_mismatch(tmp_path, capsys):
+    # Like the 4 archive clips with peak ~0.0016: the old script measured them, the new one rejects them.
+    write(tmp_path / "quiet.wav", join(silence(0.1), tone(2.0, amp=0.0016), silence(0.1)))
+    flags = write_flags(tmp_path / "wav_flags.csv", [old_row(tmp_path, "quiet.wav")])
+    assert checker.main(["--archive", str(tmp_path), "--flags", str(flags)]) == 0
+    out = capsys.readouterr().out
+    assert "1 clips newly rejected" in out and "silent: quiet.wav" in out and "all agree" in out
