@@ -89,9 +89,14 @@ def to_mono(audio: Any) -> Tuple[np.ndarray, int]:
     if channels == 0 or channels > MAX_CHANNELS:
         raise ValueError(f"audio shape {samples.shape} looks like (channels, frames); "
                          "pass 1-D or (frames, channels)")
-    if channels == 1:
-        return samples[:, 0], 1
-    return samples.mean(axis=1, dtype=np.float32), channels
+    return _mix_down(samples), channels
+
+
+def _mix_down(samples: np.ndarray) -> np.ndarray:
+    """(frames, channels) float32 -> mono float32. One channel is returned as-is (bit-identical)."""
+    if samples.shape[1] == 1:
+        return samples[:, 0]
+    return samples.mean(axis=1, dtype=np.float32)
 
 
 def count_non_finite(mono: np.ndarray) -> int:
@@ -212,6 +217,13 @@ def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] =
       thresholds  the numbers used
       version     wav-validation version
     """
+    mono, channels = to_mono(audio)
+    return _validate(mono, channels, sample_rate, num_patches, max_generate_length, thresholds)
+
+
+def _validate(mono: np.ndarray, channels: int, sample_rate: Any, num_patches: Optional[int],
+              max_generate_length: Optional[int], t: Thresholds) -> Dict[str, Any]:
+    """validate_audio() after the mix-down to mono."""
     from wav_validation import __version__
 
     try:
@@ -221,8 +233,6 @@ def validate_audio(audio: Any, sample_rate: int, *, num_patches: Optional[int] =
     if not good_rate:
         raise ValueError(f"sample_rate must be a positive integer, got {sample_rate!r}")
     sample_rate = int(sample_rate)
-    t = thresholds
-    mono, channels = to_mono(audio)
     duration_s = mono.size / sample_rate
     non_finite = count_non_finite(mono)
     flags = []
@@ -302,5 +312,7 @@ def validate_wav(path: Union[str, Path], *, num_patches: Optional[int] = None,
         audio, sample_rate = sf.read(path, dtype="float32", always_2d=True)
     except Exception:  # soundfile raises its own error types for corrupt or non-audio files
         return _file_problem("unreadable_audio", num_patches, max_generate_length, thresholds)
-    return validate_audio(audio, sample_rate, num_patches=num_patches,
-                          max_generate_length=max_generate_length, thresholds=thresholds)
+    # soundfile always gives (frames, channels), so to_mono's guard against transposed in-memory
+    # arrays doesn't apply: a file with many channels is still a valid file.
+    return _validate(_mix_down(audio), audio.shape[1], sample_rate, num_patches, max_generate_length,
+                     thresholds)
