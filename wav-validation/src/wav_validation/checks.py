@@ -89,3 +89,8 @@ def to_mono(audio: Any) -> Tuple[np.ndarray, int]:
 def count_non_finite(mono: np.ndarray) -> int:
     """NaN/inf samples. Float32 WAVs (what the executor writes) can carry them; int PCM can't."""
     return int(mono.size - np.count_nonzero(np.isfinite(mono)))
+
+
+def is_too_short(n_samples: int, sample_rate: int, t: Thresholds = DEFAULT) -> bool:
+    """Same rule as speaker_sim.py: fewer samples than min_seconds of audio."""
+    return n_samples < sample_rate * t.min_seconds
