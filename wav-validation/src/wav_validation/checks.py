@@ -148,4 +148,11 @@ def caution_flags(peak: float, m: Dict[str, Any], t: Thresholds = DEFAULT) -> li
         flags.append("leading_silence")
     if m["trailing_silence_s"] < t.min_trailing_silence_s:
         flags.append("abrupt_end")
+    if m["longest_gap_s"] > t.max_internal_gap_s:
+        flags.append("long_gap")
     return flags
+
+
+def is_signal_ok(flags: list) -> bool:
+    """The old wav_flags.csv `signal_ok` column: no caution flag."""
+    return not any(FLAGS[f][0] == CAUTION for f in flags)
