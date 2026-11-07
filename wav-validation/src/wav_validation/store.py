@@ -9,7 +9,14 @@ Layout under storage_dir:
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import soundfile as sf
 
 REJECTED_DIR = "_rejected"
 
@@ -23,3 +30,21 @@ def check_run_id(run_id: str) -> str:
     if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id) or ".." in run_id:
         raise ValueError(f"unsafe run_id for a storage folder: {run_id!r}")
     return run_id
+
+
+def write_wav_atomic(path: Path, audio: Any, sample_rate: int) -> Path:
+    """Write float32 WAV (same format as gpu-executor/scripts/generate.py) via a temp file + rename,
+    so a reader polling for the file (FastAPI results) never sees a half-written WAV."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    samples = np.asarray(audio, dtype=np.float32)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        sf.write(tmp, samples, int(sample_rate), subtype="FLOAT", format="WAV")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    return path
