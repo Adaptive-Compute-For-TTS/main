@@ -13,10 +13,12 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import soundfile as sf
+
+from wav_validation.checks import DEFAULT, Thresholds, validate_audio
 
 REJECTED_DIR = "_rejected"
 
@@ -48,3 +50,22 @@ def write_wav_atomic(path: Path, audio: Any, sample_rate: int) -> Path:
             os.remove(tmp)
         raise
     return path
+
+
+def validate_and_store(audio: Any, sample_rate: int, run_id: str, storage_dir: Union[str, Path], *,
+                       num_patches: Optional[int] = None, max_generate_length: Optional[int] = None,
+                       thresholds: Thresholds = DEFAULT) -> Dict[str, Any]:
+    """Validate a freshly generated clip and save it to Local WAV Storage.
+
+    Returns validate_audio()'s result plus:
+      audio_path   absolute path of the stored WAV if the clip passed (the run's audio_path), else None
+      stored_path  where the WAV was written
+    """
+    check_run_id(run_id)
+    result = validate_audio(audio, sample_rate, num_patches=num_patches,
+                            max_generate_length=max_generate_length, thresholds=thresholds)
+    storage = Path(storage_dir).expanduser().resolve()
+    if not result["ok"]:
+        return {**result, "audio_path": None, "stored_path": None}
+    wav = write_wav_atomic(storage / run_id / "audio.wav", audio, sample_rate)
+    return {**result, "audio_path": str(wav), "stored_path": str(wav)}

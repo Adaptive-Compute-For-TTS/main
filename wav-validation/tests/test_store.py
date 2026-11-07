@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from synth import SR, clean
-from wav_validation.store import check_run_id, write_wav_atomic
+from synth import SR, clean, silence
+from wav_validation.store import check_run_id, validate_and_store, write_wav_atomic
 
 
 def test_backend_uuid_run_ids_are_accepted():
@@ -49,3 +49,30 @@ def test_nan_audio_can_still_be_kept_for_debugging(tmp_path):
     audio[10] = np.nan
     back, _ = sf.read(write_wav_atomic(tmp_path / "bad.wav", audio, SR), dtype="float32")
     assert np.isnan(back[10])
+
+
+def test_passing_clip_is_stored_under_its_run_id(tmp_path):
+    audio = clean()
+    r = validate_and_store(audio, SR, "run-1", tmp_path)
+    assert r["ok"] is True
+    assert r["audio_path"] == str((tmp_path / "run-1" / "audio.wav").resolve())
+    assert r["stored_path"] == r["audio_path"]
+    back, _ = sf.read(r["audio_path"], dtype="float32")
+    np.testing.assert_array_equal(back, audio)
+
+
+def test_result_keeps_the_validation_fields(tmp_path):
+    r = validate_and_store(clean(), SR, "run-2", tmp_path, num_patches=8, max_generate_length=500)
+    assert r["flags"] == [] and r["checks"]["num_patches"] == 8 and r["checks"]["at_cap"] is False
+
+
+def test_failing_clip_gets_no_audio_path(tmp_path):
+    r = validate_and_store(silence(1.0), SR, "run-3", tmp_path)
+    assert r["ok"] is False and r["audio_path"] is None
+    assert not (tmp_path / "run-3").exists()
+
+
+def test_unsafe_run_id_is_refused_before_anything_is_written(tmp_path):
+    with pytest.raises(ValueError):
+        validate_and_store(clean(), SR, "../escape", tmp_path)
+    assert list(tmp_path.iterdir()) == []
