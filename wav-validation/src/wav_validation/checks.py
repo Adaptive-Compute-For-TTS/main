@@ -84,3 +84,8 @@ def to_mono(audio: Any) -> Tuple[np.ndarray, int]:
     if channels == 1:
         return samples[:, 0], 1
     return samples.mean(axis=1, dtype=np.float32), channels
+
+
+def count_non_finite(mono: np.ndarray) -> int:
+    """NaN/inf samples. Float32 WAVs (what the executor writes) can carry them; int PCM can't."""
+    return int(mono.size - np.count_nonzero(np.isfinite(mono)))
