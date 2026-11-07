@@ -103,3 +103,25 @@ def test_rejected_clip_also_gets_validation_json(tmp_path):
 def test_run_folder_has_only_the_two_files(tmp_path):
     validate_and_store(clean(), SR, "run-7", tmp_path)
     assert sorted(p.name for p in (tmp_path / "run-7").iterdir()) == ["audio.wav", "validation.json"]
+
+
+def test_storing_the_same_run_twice_is_refused(tmp_path):
+    validate_and_store(clean(), SR, "run-8", tmp_path)
+    with pytest.raises(FileExistsError):
+        validate_and_store(clean(), SR, "run-8", tmp_path)
+
+
+def test_a_rejected_run_cannot_be_stored_again_as_passed(tmp_path):
+    validate_and_store(silence(1.0), SR, "run-9", tmp_path)
+    with pytest.raises(FileExistsError):
+        validate_and_store(clean(), SR, "run-9", tmp_path)
+    assert not (tmp_path / "run-9").exists()
+
+
+def test_refused_overwrite_leaves_the_original_untouched(tmp_path):
+    first = validate_and_store(clean(), SR, "run-10", tmp_path)
+    before = (tmp_path / "run-10" / "audio.wav").read_bytes()
+    with pytest.raises(FileExistsError):
+        validate_and_store(clean() * 0.5, SR, "run-10", tmp_path)
+    assert (tmp_path / "run-10" / "audio.wav").read_bytes() == before
+    assert json.loads((tmp_path / "run-10" / "validation.json").read_text()) == first
