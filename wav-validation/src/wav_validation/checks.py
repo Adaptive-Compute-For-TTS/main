@@ -8,7 +8,11 @@ benchmark's flag_wav_runs.py.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
+
+import numpy as np
+
+MAX_CHANNELS = 16
 
 
 @dataclass(frozen=True)
@@ -60,3 +64,23 @@ FLAGS: Dict[str, tuple] = {
                             "speech may be cut off."),
     "long_gap": (CAUTION, f"A pause longer than {DEFAULT.max_internal_gap_s} s in the middle."),
 }
+
+
+def to_mono(audio: Any) -> Tuple[np.ndarray, int]:
+    """(mono float32 samples, channel count) from 1-D audio or soundfile's (frames, channels) layout.
+
+    Raises ValueError for shapes that are a caller bug rather than bad audio, e.g. a torch tensor
+    left as (1, frames): call .squeeze() first, as gpu-executor/scripts/generate.py does.
+    """
+    samples = np.asarray(audio, dtype=np.float32)
+    if samples.ndim == 1:
+        return samples, 1
+    if samples.ndim != 2:
+        raise ValueError(f"expected 1-D or (frames, channels) audio, got shape {samples.shape}")
+    channels = samples.shape[1]
+    if channels == 0 or channels > MAX_CHANNELS:
+        raise ValueError(f"audio shape {samples.shape} looks like (channels, frames); "
+                         "pass 1-D or (frames, channels)")
+    if channels == 1:
+        return samples[:, 0], 1
+    return samples.mean(axis=1, dtype=np.float32), channels
