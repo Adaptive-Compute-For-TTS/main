@@ -9,6 +9,7 @@ def test_public_api_is_importable_from_the_package():
     r = wav_validation.validate_audio(clean(), SR)
     assert r["ok"] and r["version"] == wav_validation.__version__
     assert callable(wav_validation.validate_wav)
+    assert callable(wav_validation.validate_and_store)
     assert "silent" in wav_validation.FLAGS
 
 
