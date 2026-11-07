@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+.DS_Store
+# generated test clips (recreate with make_test_clips.sh)
+clips/
+# model weights, ~770 MB (downloaded automatically on first run)
+models/
+# personal voice recordings: never commit or push these
+recordings/
+dummy/
+# results: tables, plots and Arush's WER file are committed; regenerable intermediates (with local paths) are not
+results/**/manifest.csv
+results/**/scored.csv
+results/**/latency.csv
+results/**/score_log.txt
+# audio never goes in git (voice recordings are personal data)
+*.wav
+*.m4a
+*.mp3
+*.flac

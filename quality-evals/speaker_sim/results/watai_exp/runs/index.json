@@ -1,0 +1,23 @@
+{
+ "schema_version": 1,
+ "scorer": {
+  "model": "microsoft/wavlm-base-plus-sv",
+  "revision": "feb593a6c23c1cc3d9510425c29b0a14d2b07b1e"
+ },
+ "runs": [
+  {
+   "run_id": "orig_3090",
+   "file": "orig_3090.json",
+   "n_clips": 486,
+   "n_valid": 0,
+   "n_invalid": 486
+  },
+  {
+   "run_id": "xvector_4090",
+   "file": "xvector_4090.json",
+   "n_clips": 486,
+   "n_valid": 324,
+   "n_invalid": 162
+  }
+ ]
+}
