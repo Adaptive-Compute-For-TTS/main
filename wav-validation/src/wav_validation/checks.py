@@ -8,7 +8,7 @@ benchmark's flag_wav_runs.py.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -151,6 +151,21 @@ def caution_flags(peak: float, m: Dict[str, Any], t: Thresholds = DEFAULT) -> li
     if m["longest_gap_s"] > t.max_internal_gap_s:
         flags.append("long_gap")
     return flags
+
+
+def cap_check(duration_s: float, num_patches: Optional[int], max_generate_length: Optional[int],
+              t: Thresholds = DEFAULT) -> Dict[str, Any]:
+    """Did generation stop because it hit max_generate_length (so the speech is likely cut off)?
+
+    With num_patches from the executor (generate_fixed_nfe(...).num_patches) the answer is exact.
+    Without max_generate_length there is nothing to compare against, so at_cap is None.
+    """
+    if max_generate_length is None:
+        return {"cap_s": None, "at_cap": None, "cap_source": None}
+    cap_s = round(max_generate_length * t.patch_seconds, 6)
+    if num_patches is not None:
+        return {"cap_s": cap_s, "at_cap": num_patches >= max_generate_length, "cap_source": "patches"}
+    return {"cap_s": cap_s, "at_cap": None, "cap_source": None}
 
 
 def is_signal_ok(flags: list) -> bool:
