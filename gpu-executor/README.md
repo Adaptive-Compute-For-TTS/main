@@ -23,7 +23,7 @@ result.num_patches, result.nfe_per_patch   # every entry == 10, or it raises
 ## Folders
 
 - `patches/`: our edit to dots.tts (the scheduler and executor hooks) as a git patch, applied to your dots.tts clone
-- `src/adaptive_nfe/`: the scheduler (`scheduler.py`), the DiT executor (`executor.py`, `ode.py`), and `generate_fixed_nfe` (`fixed_nfe.py`)
+- `src/adaptive_nfe/`: the scheduler (`scheduler.py`), the DiT executor (`executor.py`; `ode.py` for the eager path, `optimized.py` for the optimized path), and `generate_fixed_nfe` (`fixed_nfe.py`)
 - `scripts/`: setup (`setup_env.sh`), the equivalence test (`check_equivalence.py`), prompt + NFE → WAV (`generate.py`), the ml-evals benchmark runner (`run_benchmark.py`), results CSV → PNGs (`plot_results.py`), `inspect_dit.py` for poking at the DiT
 - `tests/`: CPU checks that need no weights, plus `test_fixed_nfe_gpu.py` (real model, skips without CUDA)
 - `docs/design/`: executor design (`executor-baseline.md`) and next-phase notes (`batching-exploration.md`)
@@ -36,8 +36,9 @@ dots.tts makes audio one patch (~160 ms) at a time; each patch is noise turned i
 
 - `patches/dots_tts_scheduler_hook.patch` adds two attributes to dots.tts's model, both `None` by default (= stock dots.tts):
   - `model.nfe_scheduler`: asked for the NFE before every patch (`FixedScheduler(n)` always says n)
-  - `model.dit_executor`: runs the patch's DiT loop instead of dots.tts's solver (eager flow matching only for now, errors otherwise)
-- `Executor` reuses dots.tts's input prep and DiT forward (`EagerDiTRunner`) and owns the noise draw and the Euler loop (`ode.py`, bit-for-bit the same as torchdiffeq 0.2.5).
+  - `model.dit_executor`: runs the patch's DiT loop instead of dots.tts's solver: `decode_patch` on the eager path, `decode_patch_optimized` with `optimize=True` (also given the solver and the request's KV cache state). Flow matching only, errors otherwise.
+- Eager (`decode_patch`): reuses dots.tts's input prep and DiT forward (`EagerDiTRunner`), owns the noise draw and the Euler loop (`ode.py`, bit-for-bit the same as torchdiffeq 0.2.5).
+- Optimized (`decode_patch_optimized`, `optimized.py`): the fast path does slightly different math (time grid `i/NFE`, fixed `dt = 1/NFE`, time only enters via the precomputed adaLN table, KV cache with one copy per ODE step). Reuses dots.tts's compiled steps (torch.compile + CUDA graphs), cache setup and prefill; owns the noise draw, step loop, Euler update and K/V write-back.
 
 Everything here must reproduce stock dots.tts exactly at a fixed NFE, so that later changes in audio come from the NFE choice, not from the plumbing.
 
@@ -61,6 +62,7 @@ dots.tts somewhere else: `DOTS_TTS_DIR=/path/to/dots.tts bash scripts/setup_env.
 ```bash
 pytest tests/                                                    # CPU, no weights (GPU test skips without CUDA)
 python scripts/check_equivalence.py --nfe 4 10 32 --executor     # full model: executor vs stock, bit for bit
+python scripts/check_equivalence.py --nfe 4 10 32 --executor --optimize   # same on the optimized path (~3 min compile)
 python scripts/generate.py --prompt-id p004 --nfe 10 --verify-stock
 ```
 
@@ -70,7 +72,8 @@ python scripts/generate.py --prompt-id p004 --nfe 10 --verify-stock
 
 ```bash
 python scripts/generate.py --prompt-id p004 --nfe 10 --verify-stock     # eager, executor runs the DiT loop
-python scripts/generate.py --prompt-id p004 --nfe 10 --optimize         # dots.tts fast path (~3 min compile), stock DiT loop
+python scripts/generate.py --prompt-id p004 --nfe 10 --optimize         # fast path (~3 min compile), executor runs the loop
+python scripts/generate.py --prompt-id p004 --nfe 10 --optimize --stock-loop   # fast path, dots.tts's own DiT loop
 python scripts/generate.py --prompt-id p001 p004 p007 --nfe 4 10 32 --optimize --verify-stock --run-id opt   # sweep, one model load
 python scripts/plot_results.py results/<table>.csv                      # PNGs from a results CSV
 ```
@@ -104,9 +107,19 @@ RTF = total time / total audio over the 3 prompts. Cutting NFE saves time on bot
 
 ![eager vs optimized](results/generate_base_eager_vs_optimized_2026-10-31_compare.png)
 
+(That sweep used dots.tts's own loop on the optimized path; the executor now runs it, see below.)
+
+**Executor on the optimized path** (`check_equivalence.py --executor --optimize`, dots.tts-base): **all pass**. Every patch + waveform identical to stock `optimize=True`, stock optimized identical to itself, exactly N compiled DiT steps per patch, every patch through `decode_patch_optimized`.
+
+| text | NFE 4 / 10 / 32 patches (Oct 31) | (Nov 5, re-run from `gpu-executor/`) |
+|---|---|---|
+| "Hello, this is a quick speech synthesis test." | 24 / 22 / 21 | 23 / 22 / 21 |
+| "The scheduler decides how many denoising steps each patch of audio receives." | 29 / 26 / 28 | 28 / 27 / 28 |
+
+Both runs all pass. Patch counts differ from the eager table because the optimized math differs slightly. They also differ between the two runs: stock `optimize=True` is identical to itself **within a process** but not across processes, probably because dots.tts compiles attention with `max-autotune`, which can pick different kernels per compile (not confirmed). So on the optimized path compare runs from the same process (which `check_equivalence.py` does), not saved hashes from an earlier run.
+
 ## Todo
 
-- executor on the optimized path (adaptive-nfe #7, next PR here): own the fast-path loop, identical to stock `--optimize`
 - decide with Yulchan whether `scheduler.py` / `fixed_nfe.py` move to `nfe-adapter/`
 - agree the worker ↔ executor interface (inputs, output dict, errors) with gpu-workers, and what telemetry / WAV validation need from it
 - run on soar (everything above is dots.tts-base)
