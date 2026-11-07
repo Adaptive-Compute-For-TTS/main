@@ -66,10 +66,19 @@ def test_result_keeps_the_validation_fields(tmp_path):
     assert r["flags"] == [] and r["checks"]["num_patches"] == 8 and r["checks"]["at_cap"] is False
 
 
-def test_failing_clip_gets_no_audio_path(tmp_path):
+def test_failing_clip_is_kept_under_rejected_with_no_audio_path(tmp_path):
     r = validate_and_store(silence(1.0), SR, "run-3", tmp_path)
     assert r["ok"] is False and r["audio_path"] is None
-    assert not (tmp_path / "run-3").exists()
+    assert r["stored_path"] == str((tmp_path / "_rejected" / "run-3" / "audio.wav").resolve())
+    assert sf.info(r["stored_path"]).frames == SR
+    assert not (tmp_path / "run-3").exists()  # nothing where the frontend would look
+
+
+def test_cautions_alone_still_store_as_a_normal_result(tmp_path):
+    from synth import join, tone
+    r = validate_and_store(join(silence(0.1), tone(1.0)), SR, "run-4", tmp_path)  # abrupt_end only
+    assert r["ok"] is True and r["flags"] == ["abrupt_end"]
+    assert r["audio_path"] == str((tmp_path / "run-4" / "audio.wav").resolve())
 
 
 def test_unsafe_run_id_is_refused_before_anything_is_written(tmp_path):
