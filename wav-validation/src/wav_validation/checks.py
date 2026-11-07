@@ -144,4 +144,8 @@ def caution_flags(peak: float, m: Dict[str, Any], t: Thresholds = DEFAULT) -> li
         flags.append("clipped")
     if peak > t.max_peak:
         flags.append("too_loud")
+    if m["leading_silence_s"] >= t.max_leading_silence_s:
+        flags.append("leading_silence")
+    if m["trailing_silence_s"] < t.min_trailing_silence_s:
+        flags.append("abrupt_end")
     return flags

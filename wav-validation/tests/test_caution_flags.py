@@ -24,3 +24,23 @@ def test_loud_but_not_clipped():
 
 def test_peak_exactly_at_limit_is_fine():
     assert caution_flags(0.95, signal_measurements(clean(), SR)) == []
+
+
+def test_long_lead_in_is_flagged():
+    audio = join(silence(0.7), tone(1.0), silence(0.1))
+    assert flags_for(audio) == ["leading_silence"]
+
+
+def test_lead_in_just_under_limit_is_fine():
+    audio = join(silence(0.46), tone(1.0), silence(0.1))
+    assert flags_for(audio) == []
+
+
+def test_no_tail_is_an_abrupt_end():
+    audio = join(silence(0.1), tone(1.0))
+    assert flags_for(audio) == ["abrupt_end"]
+
+
+def test_short_tail_of_two_frames_is_enough():
+    audio = join(silence(0.1), tone(1.0), silence(0.06))
+    assert flags_for(audio) == []
