@@ -36,7 +36,7 @@ Every flag is either **invalid** (the run fails) or a **caution** (reported, but
 | `long_gap` | caution | a pause longer than 1.0 s in the middle |
 
 The thresholds are the team's existing numbers, not new ones:
-- `too_short` and `silent` are the speaker-similarity scorer's own rules (`quality-evals/speaker_sim/speaker_sim.py`), so a clip that passes here can always be scored.
+- `too_short` and `silent` use the speaker-similarity scorer's thresholds (`quality-evals/speaker_sim/speaker_sim.py`), and `build_run_json.py` applies them the same way, at the file's own sample rate. The scorer itself applies them after resampling to 16 kHz, so a clip sitting right at a threshold could still be refused there.
 - The five cautions are the `signal_ok` rules from the benchmark's `flag_wav_runs.py`.
 - `tests/test_thresholds.py` fails if either source changes without this package.
 
@@ -54,9 +54,9 @@ How a few of the checks work:
 ### Agreement with the old benchmark labels
 
 On the 1,028 archived benchmark WAVs (`scripts/check_against_archive.py`):
-- Every measurement, `at_cap` and `signal_ok` value matches `wav_flags.csv`.
+- For the 1,024 clips both scripts measure, every stored measurement, `at_cap` and `signal_ok` value matches `wav_flags.csv`.
+- The other 4 are near-silent clips (peak about 0.0016) that the old script had no check for. The new code rejects them as `silent` before measuring silence layout; their duration, peak and `at_cap` still match. All four were already excluded as continuation-mode output.
 - The x-vector runs split exactly as before: the 324 `clean_candidate` clips pass and the 162 cut-off clips fail.
-- It also catches 4 near-silent clips (peak about 0.0016) that the old script had no check for. All four were already excluded as continuation-mode output.
 
 ## Setup
 
@@ -100,8 +100,9 @@ _rejected/<run_id>/validation.json
 ```
 
 Guarantees:
-- **Atomic writes:** both files are written via a temp file and a rename, so the results API never sees a half-written file.
-- **Each run is stored once:** a second call with the same `run_id` raises `FileExistsError` and leaves the first result untouched.
+- **Atomic writes:** both files are written via a temp file and a rename, so the results API never sees a half-written file. They get normal file permissions (from the umask), not owner-only.
+- **Each run is stored once:** a second call with the same `run_id` raises `FileExistsError` and leaves the first result untouched. This holds even when two workers store the same run at the same moment with different verdicts (e.g. a stuck run retried while the original finishes): every store claims `<run_id>/` with an atomic `mkdir` first, and a failed run releases that claim only after `_rejected/<run_id>/` exists.
+- **A failed write can be retried:** if writing fails partway (e.g. disk full), everything that call created is removed before the error is raised, so the run isn't blocked.
 - **Safe folder names:** `run_id` must be a plain name (backend UUIDs are), so it can't escape `STORAGE_DIR`.
 
 `validate_audio(audio, sample_rate, ...)` does the same checks without saving anything. `validate_wav(path, ...)` checks a file that's already on disk, and never raises for a bad file.
