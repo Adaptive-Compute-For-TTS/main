@@ -135,3 +135,13 @@ def signal_measurements(mono: np.ndarray, sample_rate: int, t: Thresholds = DEFA
         "trailing_silence_s": float((frame_count - 1 - voiced[-1]) * t.frame_s) if voiced.size else 0.0,
         "longest_gap_s": float(longest_gap * t.frame_s),
     }
+
+
+def caution_flags(peak: float, m: Dict[str, Any], t: Thresholds = DEFAULT) -> list:
+    """Caution flags from peak + signal_measurements(); together they are flag_wav_runs.py's signal_ok."""
+    flags = []
+    if m["clipped_samples"] > 0:
+        flags.append("clipped")
+    if peak > t.max_peak:
+        flags.append("too_loud")
+    return flags
