@@ -1,5 +1,6 @@
 import json
 import uuid
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -137,3 +138,66 @@ def test_stored_files_get_normal_permissions_not_owner_only(tmp_path):
     validate_and_store(clean(), SR, "perm", tmp_path)
     for name in ("audio.wav", "validation.json"):
         assert stat.S_IMODE((tmp_path / "perm" / name).stat().st_mode) == expected, name
+
+
+def test_a_refused_pass_leaves_the_earlier_rejected_run_untouched(tmp_path):
+    first = validate_and_store(silence(1.0), SR, "run-11", tmp_path)
+    with pytest.raises(FileExistsError):
+        validate_and_store(clean(), SR, "run-11", tmp_path)
+    assert not (tmp_path / "run-11").exists()  # the refused call released its claim
+    saved = json.loads((tmp_path / "_rejected" / "run-11" / "validation.json").read_text())
+    assert saved == first
+
+
+@pytest.mark.parametrize("broken", ["write_wav_atomic", "write_text_atomic"])
+@pytest.mark.parametrize("audio_kind", ["passing", "failing"])
+def test_a_failed_write_cleans_up_so_the_run_can_be_retried(tmp_path, monkeypatch, broken, audio_kind):
+    # Found in review: a write error (e.g. disk full) left an empty run folder behind, and every
+    # retry of that run was then refused with FileExistsError.
+    import wav_validation.store as store
+
+    audio = clean() if audio_kind == "passing" else silence(1.0)
+    real = getattr(store, broken)
+
+    def disk_full(*args, **kwargs):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(store, broken, disk_full)
+    with pytest.raises(OSError):
+        validate_and_store(audio, SR, "run-12", tmp_path)
+    assert not (tmp_path / "run-12").exists()
+    assert not (tmp_path / "_rejected" / "run-12").exists()
+
+    monkeypatch.setattr(store, broken, real)
+    r = validate_and_store(audio, SR, "run-12", tmp_path)
+    assert Path(r["stored_path"]).exists()
+
+
+def test_concurrent_stores_of_one_run_with_mixed_verdicts_store_exactly_once(tmp_path):
+    # Found in review: a passing and a failing store of the same run (e.g. a stuck run retried by
+    # recovery while the original was still going) could both succeed, one in each folder.
+    import threading
+
+    for attempt in range(20):
+        run_id = f"race-{attempt}"
+        barrier = threading.Barrier(8)
+        outcomes = []
+
+        def store_once(audio):
+            barrier.wait()
+            try:
+                validate_and_store(audio, SR, run_id, tmp_path)
+                outcomes.append("stored")
+            except FileExistsError:
+                outcomes.append("refused")
+
+        threads = [threading.Thread(target=store_once, args=(clean() if i % 2 else silence(1.0),))
+                   for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(outcomes) == ["refused"] * 7 + ["stored"], attempt
+        stored_in = [p for p in (tmp_path / run_id, tmp_path / "_rejected" / run_id) if p.exists()]
+        assert len(stored_in) == 1, attempt
+        assert sorted(p.name for p in stored_in[0].iterdir()) == ["audio.wav", "validation.json"]

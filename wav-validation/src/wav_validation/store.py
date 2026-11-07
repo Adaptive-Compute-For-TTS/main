@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -78,8 +79,9 @@ def validate_and_store(audio: Any, sample_rate: int, run_id: str, storage_dir: U
                        thresholds: Thresholds = DEFAULT) -> Dict[str, Any]:
     """Validate a freshly generated clip and save it to Local WAV Storage.
 
-    Writes audio.wav and validation.json (this return value) into the run's folder. Raises
-    FileExistsError if the run was already stored (pass or fail): a run is stored once.
+    Writes audio.wav and validation.json (this return value) into the run's folder. A run is
+    stored once: FileExistsError if it was already stored, whether it passed or failed. If writing
+    fails partway, everything this call created is removed again, so the run can be retried.
     Returns validate_audio()'s result plus:
       run_id       as given
       audio_path   absolute path of the stored WAV if the clip passed (the run's audio_path), else None
@@ -90,13 +92,34 @@ def validate_and_store(audio: Any, sample_rate: int, run_id: str, storage_dir: U
                             max_generate_length=max_generate_length, thresholds=thresholds)
     storage = Path(storage_dir).expanduser().resolve()
     passed, rejected = storage / run_id, storage / REJECTED_DIR / run_id
-    for existing in (passed, rejected):
-        if existing.exists():
-            raise FileExistsError(f"run {run_id!r} is already stored at {existing}; refusing to overwrite")
-    folder = passed if result["ok"] else rejected
-    folder.parent.mkdir(parents=True, exist_ok=True)
-    folder.mkdir()  # atomic claim: if another worker got here first, this raises FileExistsError
-    wav = write_wav_atomic(folder / "audio.wav", audio, sample_rate)
-    out = {**result, "run_id": run_id, "audio_path": str(wav) if result["ok"] else None, "stored_path": str(wav)}
-    write_text_atomic(folder / "validation.json", json.dumps(out, indent=2) + "\n")
+    storage.mkdir(parents=True, exist_ok=True)
+
+    # One claim point for every verdict: mkdir is atomic, so if two workers store the same run at
+    # once, only one gets past here. A failed run gives the claim back only after its _rejected/
+    # folder exists, so whoever claims next always finds one of the two folders.
+    try:
+        passed.mkdir()
+    except FileExistsError:
+        raise FileExistsError(f"run {run_id!r} is already stored at {passed}; refusing to overwrite") from None
+    created = [passed]
+    try:
+        if rejected.exists():
+            raise FileExistsError(f"run {run_id!r} is already stored at {rejected}; refusing to overwrite")
+        if result["ok"]:
+            folder = passed
+        else:
+            rejected.parent.mkdir(exist_ok=True)
+            rejected.mkdir()
+            created.append(rejected)
+            folder = rejected
+        wav = write_wav_atomic(folder / "audio.wav", audio, sample_rate)
+        out = {**result, "run_id": run_id, "audio_path": str(wav) if result["ok"] else None,
+               "stored_path": str(wav)}
+        write_text_atomic(folder / "validation.json", json.dumps(out, indent=2) + "\n")
+    except BaseException:
+        for made in reversed(created):  # only what this call created; never an earlier run's files
+            shutil.rmtree(made, ignore_errors=True)
+        raise
+    if not result["ok"]:
+        passed.rmdir()  # give the claim back; _rejected/<run_id>/ now marks the run as stored
     return out
