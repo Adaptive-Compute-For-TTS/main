@@ -107,6 +107,12 @@ Guarantees:
 
 `validate_audio(audio, sample_rate, ...)` does the same checks without saving anything. `validate_wav(path, ...)` checks a file that's already on disk, and never raises for a bad file.
 
+Bad *audio* never raises; it comes back as flags. Calling it wrongly does raise `ValueError` (in both `validate_audio` and `validate_and_store`, before anything is written):
+- integer samples such as raw int16 PCM (pass float samples in [-1, 1]);
+- a `(channels, frames)` array (call `.squeeze()` or transpose first);
+- a sample rate that isn't a positive integer;
+- for `validate_and_store`, an unsafe `run_id`.
+
 ### Result shape (draft, to confirm with gpu-workers: Tony / Eric)
 
 ```json
@@ -136,7 +142,7 @@ What the fields mean:
 
 ```bash
 python -m wav_validation runs/                                   # every *.wav under runs/
-python -m wav_validation audio.wav --max-generate-length 500     # also check for cut-off audio
+python -m wav_validation audio.wav --max-generate-length 500     # also check for cut-off audio (x-vector cap; see "Cut-off detection")
 python -m wav_validation runs/ --json > report.json              # full results; summary on stderr
 ```
 
