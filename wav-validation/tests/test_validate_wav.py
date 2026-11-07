@@ -56,3 +56,10 @@ def test_duration_fallback_on_a_file_at_the_cap(tmp_path):
     audio = join(silence(0.1), tone(12.7))  # 12.8 s = 80 patches
     r = validate_wav(write(tmp_path / "capped.wav", audio), max_generate_length=80)
     assert "truncated_at_cap" in r["flags"] and r["checks"]["cap_source"] == "duration"
+
+
+def test_int16_file_is_scaled_on_read_so_it_still_validates(tmp_path):
+    # validate_wav reads with dtype="float32", so integer PCM files are fine; only raw int arrays
+    # handed to validate_audio are refused.
+    r = validate_wav(write(tmp_path / "pcm16.wav", clean(), subtype="PCM_16"))
+    assert r["ok"] and abs(r["checks"]["peak"] - 0.5) < 1e-3

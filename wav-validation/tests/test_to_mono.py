@@ -35,3 +35,17 @@ def test_plain_lists_are_accepted():
 def test_caller_bugs_raise(shape):
     with pytest.raises(ValueError):
         to_mono(np.zeros(shape, dtype=np.float32))
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.int32, np.uint8, bool])
+def test_integer_samples_are_refused(dtype):
+    # Found in review: raw int16 PCM passed straight through and came back ok=True with a peak
+    # in the thousands (only cautions).
+    with pytest.raises(ValueError, match="float samples"):
+        to_mono((tone(0.1) * 30000).astype(dtype))
+
+
+def test_float16_and_float64_are_accepted():
+    for dtype in (np.float16, np.float64):
+        mono, _ = to_mono(tone(0.1).astype(dtype))
+        assert mono.dtype == np.float32

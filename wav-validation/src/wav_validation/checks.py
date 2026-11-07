@@ -71,10 +71,16 @@ FLAGS: Dict[str, tuple] = {
 def to_mono(audio: Any) -> Tuple[np.ndarray, int]:
     """(mono float32 samples, channel count) from 1-D audio or soundfile's (frames, channels) layout.
 
-    Raises ValueError for shapes that are a caller bug rather than bad audio, e.g. a torch tensor
-    left as (1, frames): call .squeeze() first, as gpu-executor/scripts/generate.py does.
+    Raises ValueError for input that is a caller bug rather than bad audio:
+      - a torch tensor left as (1, frames): call .squeeze() first, as gpu-executor/scripts/generate.py does
+      - integer samples (e.g. raw int16 PCM): the checks expect float samples in [-1, 1], and int16
+        values would pass as "ok" with a peak in the thousands. Read files with
+        soundfile.read(..., dtype="float32"), which scales them.
     """
-    samples = np.asarray(audio, dtype=np.float32)
+    raw = np.asarray(audio)
+    if raw.dtype.kind != "f":
+        raise ValueError(f"expected float samples in [-1, 1], got dtype {raw.dtype}")
+    samples = raw.astype(np.float32, copy=False)
     if samples.ndim == 1:
         return samples, 1
     if samples.ndim != 2:
