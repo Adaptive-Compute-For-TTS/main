@@ -106,3 +106,32 @@ def peak_and_rms(mono: np.ndarray) -> Tuple[float, float]:
 def is_silent(peak: float, rms: float, t: Thresholds = DEFAULT) -> bool:
     """Same rule as speaker_sim.py / build_run_json.py: a failed generation, not a quiet voice."""
     return peak < t.min_peak or rms < t.min_rms
+
+
+def signal_measurements(mono: np.ndarray, sample_rate: int, t: Thresholds = DEFAULT) -> Dict[str, Any]:
+    """Clipping and silence layout, with the same math as flag_wav_runs.py:signal_checks.
+
+    The clip is cut into frame_s frames; a frame is "voiced" when its level is within
+    silence_below_peak_db of the loudest frame. Leading/trailing silence and the longest gap are
+    counted in unvoiced frames. Audio shorter than one frame has no frames and reports zeros.
+    """
+    clipped = int((np.abs(mono) >= t.clip_level).sum())
+    frame = int(t.frame_s * sample_rate)
+    frame_count = len(mono) // frame if frame > 0 else 0
+    if frame_count == 0:
+        return {"clipped_samples": clipped, "leading_silence_s": 0.0, "trailing_silence_s": 0.0,
+                "longest_gap_s": 0.0}
+
+    frames = mono[: frame_count * frame].reshape(frame_count, frame)
+    level_db = 20 * np.log10(np.sqrt((frames**2).mean(axis=1)) + 1e-9)
+    voiced = np.flatnonzero(level_db > level_db.max() - t.silence_below_peak_db)
+
+    longest_gap = 0
+    if voiced.size > 1:
+        longest_gap = int((np.diff(voiced) - 1).max())
+    return {
+        "clipped_samples": clipped,
+        "leading_silence_s": float(voiced[0] * t.frame_s) if voiced.size else 0.0,
+        "trailing_silence_s": float((frame_count - 1 - voiced[-1]) * t.frame_s) if voiced.size else 0.0,
+        "longest_gap_s": float(longest_gap * t.frame_s),
+    }
