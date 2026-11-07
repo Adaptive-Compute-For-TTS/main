@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -35,14 +35,19 @@ def check_run_id(run_id: str) -> str:
     return run_id
 
 
+def _temp_path(path: Path) -> Path:
+    """A unique hidden name next to path. Created with a plain open (not tempfile.mkstemp, which
+    makes files owner-only 0600), so the final file gets the usual permissions from the umask."""
+    return path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+
+
 def write_wav_atomic(path: Path, audio: Any, sample_rate: int) -> Path:
     """Write float32 WAV (same format as gpu-executor/scripts/generate.py) via a temp file + rename,
     so a reader polling for the file (FastAPI results) never sees a half-written WAV."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     samples = np.asarray(audio, dtype=np.float32)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    os.close(fd)
+    tmp = _temp_path(path)
     try:
         sf.write(tmp, samples, int(sample_rate), subtype="FLOAT", format="WAV")
         os.replace(tmp, path)
@@ -56,9 +61,9 @@ def write_wav_atomic(path: Path, audio: Any, sample_rate: int) -> Path:
 def write_text_atomic(path: Path, text: str) -> Path:
     """Same temp-file + rename pattern as write_wav_atomic, for validation.json."""
     path = Path(path)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = _temp_path(path)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with open(tmp, "x", encoding="utf-8") as f:
             f.write(text)
         os.replace(tmp, path)
     except BaseException:

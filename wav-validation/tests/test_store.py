@@ -125,3 +125,15 @@ def test_refused_overwrite_leaves_the_original_untouched(tmp_path):
         validate_and_store(clean() * 0.5, SR, "run-10", tmp_path)
     assert (tmp_path / "run-10" / "audio.wav").read_bytes() == before
     assert json.loads((tmp_path / "run-10" / "validation.json").read_text()) == first
+
+
+def test_stored_files_get_normal_permissions_not_owner_only(tmp_path):
+    # Found in review: tempfile.mkstemp made audio.wav / validation.json mode 0600.
+    import stat
+
+    reference = tmp_path / "plain.txt"
+    reference.write_text("x")  # whatever the current umask gives a normal file
+    expected = stat.S_IMODE(reference.stat().st_mode)
+    validate_and_store(clean(), SR, "perm", tmp_path)
+    for name in ("audio.wav", "validation.json"):
+        assert stat.S_IMODE((tmp_path / "perm" / name).stat().st_mode) == expected, name
