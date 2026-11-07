@@ -1,0 +1,14 @@
+# Installed by scripts/setup_env.sh (torch must be installed first from the right index).
+# Pins: pip install -r requirements.txt -c constraints.txt
+
+# dots.tts is installed by scripts/setup_env.sh from the local clone (editable, so the hook patch in
+# its source is what runs). Default location ../../dots.tts, override with DOTS_TTS_DIR.
+
+# This component's package (src/adaptive_nfe), editable.
+-e .
+
+# Equivalence tests.
+pytest
+
+# Charts (scripts/plot_results.py).
+matplotlib
