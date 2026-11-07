@@ -38,3 +38,25 @@ class Thresholds:
 
 
 DEFAULT = Thresholds()
+
+
+INVALID = "invalid"  # the run fails; the clip is not stored as a result or scored
+CAUTION = "caution"  # reported, but the run still succeeds
+
+# flag -> (severity, description). Order is the order flags are listed on a clip. Names shared with
+# quality-evals/speaker_sim/build_run_json.py mean the same thing there.
+FLAGS: Dict[str, tuple] = {
+    "missing_audio": (INVALID, "The WAV file is not on disk."),
+    "unreadable_audio": (INVALID, "The WAV file could not be decoded."),
+    "non_finite": (INVALID, "Contains NaN or infinite samples (a numerical blow-up during generation)."),
+    "too_short": (INVALID, f"Shorter than {DEFAULT.min_seconds} s."),
+    "silent": (INVALID, f"(Near-)silent: peak below {DEFAULT.min_peak} or RMS below {DEFAULT.min_rms}."),
+    "truncated_at_cap": (INVALID, "Stopped at the generation length cap (max_generate_length), "
+                                  "usually mid-sentence."),
+    "clipped": (CAUTION, f"Has samples at full scale (|x| >= {DEFAULT.clip_level})."),
+    "too_loud": (CAUTION, f"Peak above {DEFAULT.max_peak}."),
+    "leading_silence": (CAUTION, f"Starts with {DEFAULT.max_leading_silence_s} s or more of silence."),
+    "abrupt_end": (CAUTION, f"Less than {DEFAULT.min_trailing_silence_s} s of silence at the end: "
+                            "speech may be cut off."),
+    "long_gap": (CAUTION, f"A pause longer than {DEFAULT.max_internal_gap_s} s in the middle."),
+}
