@@ -1,0 +1,97 @@
+# CPU tests for each component. A job runs only when its folder (or this file) changes;
+# otherwise it is skipped, which GitHub counts as passing.
+# GPU tests (gpu-executor/tests/test_fixed_nfe_gpu.py) skip themselves here: no CUDA, no dots.tts.
+
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      wav-validation: ${{ steps.filter.outputs.wav-validation }}
+      backend: ${{ steps.filter.outputs.backend }}
+      gpu-executor: ${{ steps.filter.outputs.gpu-executor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Each job runs only when a file matching its filter changes. If your component imports
+          # or reads files from another folder, add that folder to your filter in the same PR.
+          filters: |
+            workflow: &workflow
+              - .github/workflows/tests.yml
+            wav-validation:
+              - *workflow
+              - wav-validation/**
+              # test_thresholds.py checks wav-validation's limits against this file
+              - quality-evals/speaker_sim/speaker_sim.py
+            backend:
+              - *workflow
+              - backend/**
+            gpu-executor:
+              - *workflow
+              - gpu-executor/**
+
+  wav-validation:
+    needs: changes
+    if: needs.changes.outputs.wav-validation == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # oldest and newest the package claims to support
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: wav-validation/pyproject.toml
+      - run: pip install -e 'wav-validation[test]'
+      - run: pytest wav-validation/tests
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      # run from the repo root: the tests import `backend.app`
+      - run: python -m pytest backend/tests
+
+  gpu-executor:
+    needs: changes
+    if: needs.changes.outputs.gpu-executor == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gpu-executor/constraints.txt
+      # CPU torch only; without dots.tts, test_executor.py and test_fixed_nfe_gpu.py skip themselves
+      - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e gpu-executor torchdiffeq pytest
+      - run: pytest gpu-executor/tests
