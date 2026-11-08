@@ -26,6 +26,8 @@ MIN_SECONDS = 0.5
 # Loudest sample must reach -40 dBFS. Real speech here peaks at 0.09 or more; failed dots.tts
 # generations (near-silent, peak ~0.002) would otherwise get a plausible-looking score.
 MIN_PEAK = 0.01
+# Overall RMS below this is treated as silence. wav-validation's min_rms must stay equal to it.
+MIN_RMS = 1e-4
 
 
 class SpeakerSim:
@@ -41,7 +43,7 @@ class SpeakerSim:
         wav, _ = librosa.load(path, sr=SR, mono=True)
         if wav.size < SR * MIN_SECONDS:
             raise ValueError(f"{path}: shorter than {MIN_SECONDS}s")
-        if np.sqrt(np.mean(wav**2)) < 1e-4 or np.abs(wav).max() < MIN_PEAK:
+        if np.sqrt(np.mean(wav**2)) < MIN_RMS or np.abs(wav).max() < MIN_PEAK:
             raise ValueError(f"{path}: (near-)silent audio")
         return wav
 
