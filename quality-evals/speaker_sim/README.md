@@ -206,9 +206,11 @@ from evaluate_run import QualityEvaluator
 qe = QualityEvaluator(reference_wav="abhi1.wav")    # build once; models load on first use
 quality = qe.evaluate(audio_path, prompt, validation=v)   # never raises
 # {"scored": True, "sim_ref": 0.93, "wer": 0.0, "cer": 0.0, "transcript": "...",
-#  "sim_model": "microsoft/wavlm-base-plus-sv@feb593a...", "asr_model": "openai/whisper-small", "errors": []}
+#  "sim_model": "microsoft/wavlm-base-plus-sv@feb593a...", "asr_model": "faster-whisper-small", "errors": []}
 ```
 
+- WER/CER and the transcript come from the shared scorer in `quality-evals/wer_cer` (the one behind `wer_arush.csv`), so per-run and sweep numbers match. Install `quality-evals/wer_cer/requirements.txt` as well as the SIM requirements.
+- Sai's `result` layout: `validation` (WAV checks), `metrics` (runtime), `quality` (this dict). Quality scoring finishes before the run is marked completed.
 - A clip that failed validation is not scored. A scorer that fails leaves its metric `None` and adds an entry to `errors`; the other metric still comes back.
 - No `sim_hi_nfe` (needs a second generation at the highest NFE) and no `latency_outlier` (needs the whole run): those stay batch-only.
 - WER/CER here lowercases and strips punctuation, capped at 1. Arush's scorer also expands contractions and strips a re-spoken intro, so numbers can differ slightly from `wer_arush.csv` until the two are merged.
