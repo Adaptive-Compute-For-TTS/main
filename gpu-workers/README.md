@@ -8,15 +8,25 @@ Status: planning. Nothing runs yet; the backend still uses its placeholder worke
 
 ## Flow
 
+Follows the system diagram:
+
 ```
-POST /runs  ->  SQLite row, status=queued
-                  |
+React -> FastAPI POST /runs -> job queue (SQLite row, status=queued)
+                                  |
 GPU worker:  claim run (status=running)
-             -> generate_fixed_nfe(rt, nfe, text=prompt)      gpu-executor/
-             -> write <storage>/<run_id>/audio.wav
-             -> WAV validation (Nick), telemetry (Niranjan)
-             -> status=completed + result + audio_path   (or status=failed + error_message)
+             -> NFE adapter + fixed-NFE executor     generate_fixed_nfe(rt, nfe, text=prompt)   gpu-executor/
+             -> local GPU execution                  dots.tts on this machine's GPU
+             -> runtime telemetry (Niranjan)         time, RTF, peak VRAM, ...
+             -> WAV validation (Nick)                validate_and_store(...)               wav-validation/
+                  passed: <storage>/<run_id>/audio.wav     failed: _rejected/<run_id>/, run fails
+             -> quality eval (Arush, Atharv)         passed clips only
+             -> local WAV storage + SQLite (Sai)     status=completed + result + audio_path
+                                                     (or status=failed + error_message)
+                                  |
+FastAPI results -> React dashboard
 ```
+
+Check first, then store: the worker never saves the WAV itself. It passes the audio straight from the executor to `validate_and_store`, which checks it and writes the file only to the right place (`<storage>/<run_id>/` if it passed, `_rejected/<run_id>/` if not).
 
 The model is loaded once when the worker starts (plus a warmup), then reused for every run.
 
@@ -25,15 +35,17 @@ The model is loaded once when the worker starts (plus a warmup), then reused for
 In, from the `runs` table: `id`, `prompt`, `nfe` (4-32).
 
 Out, written to the same row:
-- `audio_path`: `<storage>/<run_id>/audio.wav`
-- `result` (JSON): `nfe_per_patch`, `num_patches`, `audio_s`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, `model`, `optimize`, `seed`, plus `validation` and `telemetry` sections
-- on error: `status=failed`, `error_message` (out of GPU memory, NFE check failed, WAV failed validation, ...)
+- `audio_path`: `<storage>/<run_id>/audio.wav`, from `validate_and_store` (only for clips that passed)
+- `result` (JSON): `nfe_per_patch`, `num_patches`, `audio_s`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, `model`, `optimize`, `seed`, plus `telemetry`, `validation` (what `validate_and_store` returns) and `quality` sections
+- on error: `status=failed`, `error_message` (out of GPU memory, NFE check failed, WAV failed validation with its flags, ...)
 
 ## Open questions
 
 - Separate worker process polling SQLite (proposed: survives restarts, keeps dots.tts out of the backend env) vs. running inside FastAPI
 - Eager or optimized path for the demo (optimized is ~2x faster but compiles ~3 min at startup)
-- Model (soar or base) and where WAVs are stored
+- Model (soar or base) and where WAVs are stored (`storage_dir` is shared by wav-validation and Sai's storage)
+- Retrying a run: `validate_and_store` refuses to store the same `run_id` twice, even after a failed validation, so a retry needs a new run id or a backend rule
+- Does quality eval run inside the worker, or afterwards on stored clips?
 
 ## Plan
 
