@@ -4,7 +4,7 @@ The long-running process on the GPU machine that turns queued runs into WAVs. Th
 
 Owners: Tony, Nick Kim, Eric.
 
-Status: planning. Nothing runs yet; the backend still uses its placeholder worker (`backend/app/workers/local_worker.py`).
+Status: the worker core (`src/gpu_worker/`) runs one job end to end: generate, validate, store, build the row. Not yet connected to the queue; the backend still uses its placeholder worker (`backend/app/workers/local_worker.py`).
 
 ## Flow
 
@@ -30,13 +30,45 @@ Check first, then store: the worker never saves the WAV itself. It passes the au
 
 The model is loaded once when the worker starts (plus a warmup), then reused for every run.
 
+## Calling it (for the queue loop)
+
+```python
+from gpu_worker import GpuWorker, Job, WorkerConfig
+
+worker = GpuWorker.load(WorkerConfig.from_env())   # once at startup: loads dots.tts, warms up
+outcome = worker.run_job(Job(run.id, run.prompt, run.nfe))   # per claimed run; never raises for a failed run
+# outcome.status ("completed" / "failed"), outcome.result, outcome.audio_path, outcome.error_message
+#   -> repository.mark_run_completed(db, run.id, outcome.result, audio_path=outcome.audio_path)
+#   or repository.mark_run_failed(db, run.id, outcome.error_message)
+```
+
+Settings (model, `optimize`, seed, storage folder, warmup NFEs, ...) come from `GPU_WORKER_*` environment variables; see `src/gpu_worker/config.py`. Defaults match `gpu-executor/scripts/generate.py`: soar, bf16, eager, seed 42, guidance 1.2, speaker scale 1.5. Every run is seeded the same, so the same prompt and NFE give the same audio.
+
+## Setup and checks
+
+Needs the gpu-executor setup (dots.tts clone with the hook patch next to the monorepo, see `gpu-executor/README.md`). The worker shares gpu-executor's venv, so it runs exactly the executor code gpu-executor's checks test.
+
+```bash
+bash gpu-workers/scripts/setup_env.sh && source gpu-executor/.venv/bin/activate
+cd gpu-workers
+pytest tests/                                                    # fake runtime: no weights, no GPU
+python scripts/run_one.py --prompt "Hello there." --nfe 10       # real model on this GPU, prints the row
+```
+
+## Folders
+
+- `src/gpu_worker/`: `config.py` (settings), `worker.py` (`GpuWorker`: load once, `run_job`)
+- `scripts/`: `setup_env.sh`, `run_one.py` (one job by hand)
+- `tests/`: fake runtime driving the real `generate_fixed_nfe` and `validate_and_store`
+- `runs/`: default storage folder, gitignored
+
 ## Interface (draft, to agree with backend)
 
 In, from the `runs` table: `id`, `prompt`, `nfe` (4-32).
 
 Out, written to the same row:
 - `audio_path`: `<storage>/<run_id>/audio.wav`, from `validate_and_store` (only for clips that passed)
-- `result` (JSON): `nfe_per_patch`, `num_patches`, `audio_s`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, `model`, `optimize`, `seed`, plus `telemetry`, `validation` (what `validate_and_store` returns) and `quality` sections
+- `result` (JSON): `nfe`, `nfe_per_patch`, `num_patches`, `executor_used_all_patches`, `audio_s`, `sample_rate`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, the settings (`model`, `precision`, `optimize`, `seed`, `ode_method`, `guidance_scale`, `speaker_scale`), `gpu`, `worker_version`, plus `validation` (what `validate_and_store` returns), and `telemetry` and `quality` (empty for now). Also kept for failed validations, for debugging.
 - on error: `status=failed`, `error_message` (out of GPU memory, NFE check failed, WAV failed validation with its flags, ...)
 
 ## Open questions
@@ -49,7 +81,7 @@ Out, written to the same row:
 
 ## Plan
 
-- worker core: load model, run one job, write WAV + result (Tony)
+- worker core: load model, run one job, validate + store, build the row (Tony) - first version done
 - claiming jobs, polling, recovering runs stuck in `running` (Eric)
 - WAV validation step + testing on the GPU (Nick)
 - end-to-end with the backend by Nov 15
