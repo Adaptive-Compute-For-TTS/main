@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from evaluate_run import QualityEvaluator, normalize, wer_cer  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wer_cer"))
+from evaluate_run import QualityEvaluator, wer_cer  # noqa: E402
+from metrics import normalize  # noqa: E402
 
 
 class FakeSim:
@@ -31,8 +33,8 @@ def wav(tmp_path):
 
 
 def test_normalize_keeps_decimals_and_apostrophes():
-    assert normalize("Don't pay $42.75, ok?") == ["don't", "pay", "$42.75", "ok"]
-    assert normalize("It costs 3.5.") == ["it", "costs", "3.5"]
+    assert normalize("Don't pay $42.75, ok?").split() == ["do", "not", "pay", "$42.75", "ok"]
+    assert normalize("It costs 3.5.").split() == ["it", "costs", "3.5"]
 
 
 def test_wer_cer_perfect_and_errors():

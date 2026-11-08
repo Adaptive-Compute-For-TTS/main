@@ -13,48 +13,29 @@ Not the same as the sweep tooling (build_run_json.py): one run has no "same prom
 NFE" clip, so there is no sim_hi_nfe here, and the run-wide latency_outlier caution does not apply.
 """
 import re
+import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, Optional
 
-ASR_MODEL = "openai/whisper-small"  # what Arush's WER used; reconcile before the dashboard shows it
-
-# Same idea as Arush's scorer: lowercase, drop punctuation. His also expands contractions and strips a
-# re-spoken reference intro; neither is done here, so a WER from this module can differ slightly from
-# wer_arush.csv until the two are merged.
-_PUNCT = re.compile(r"[^\w\s$.%']|(?<!\d)\.|\.(?!\d)")
-
-
-def normalize(text: str) -> List[str]:
-    return _PUNCT.sub(" ", text.lower()).split()
-
-
-def _edit_distance(ref: Sequence, hyp: Sequence) -> int:
-    prev = list(range(len(hyp) + 1))
-    for i, r in enumerate(ref, 1):
-        cur = [i]
-        for j, h in enumerate(hyp, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (r != h)))
-        prev = cur
-    return prev[-1]
+# One scorer for the whole project: Arush's quality-evals/wer_cer, the one behind wer_arush.csv, so
+# per-run and sweep numbers match. Needs quality-evals/wer_cer/requirements.txt installed.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wer_cer"))
+import asr  # noqa: E402  (faster-whisper; the model itself loads on the first transcribe)
+from wer_scoring import official_columns, score_clip  # noqa: E402
 
 
 def wer_cer(reference: str, hypothesis: str) -> Dict[str, float]:
-    """Word and character error rate against the prompt text, each capped at 1 (as in wer_arush.csv)."""
-    ref_w, hyp_w = normalize(reference), normalize(hypothesis)
-    ref_c, hyp_c = " ".join(ref_w), " ".join(hyp_w)
-    if not ref_w:
+    """Word and character error rate against the prompt text (no-intro version, capped at 1, as in wer_arush.csv)."""
+    # Checked on the raw text: the normalizer turns "..." into ".", so checking after it would not catch it.
+    if not re.search(r"\w", reference):
         raise ValueError("reference text has no words")
-    return {
-        "wer": min(1.0, _edit_distance(ref_w, hyp_w) / len(ref_w)),
-        "cer": min(1.0, _edit_distance(ref_c, hyp_c) / len(ref_c)),
-    }
+    s = official_columns(score_clip(reference, hypothesis), "no_intro")
+    return {"wer": s["wer"], "cer": s["cer"]}
 
 
-def _whisper_transcriber(model_id: str = ASR_MODEL) -> Callable[[str], str]:
-    from transformers import pipeline  # lazy: heavy, and not needed when a transcriber is injected
-
-    asr = pipeline("automatic-speech-recognition", model=model_id)
-    return lambda path: asr(str(path))["text"]
+def asr_model_name() -> str:
+    """Read at call time, since asr.set_model() can switch small -> large-v3."""
+    return f"faster-whisper-{asr.ASR_SETTINGS['model']}"
 
 
 class QualityEvaluator:
@@ -66,7 +47,8 @@ class QualityEvaluator:
     ) -> None:
         """reference_wav: the voice being cloned (None skips sim_ref).
         sim: object with .similarity(a, b) -> float (default: speaker_sim.SpeakerSim, loaded on first use).
-        transcribe: path -> text (default: Whisper small, loaded on first use)."""
+        transcribe: path -> text (default: asr.transcribe, Whisper loaded on first use; it raises
+        asr.AudioRejected for clips too short or silent, recorded in `errors` like any ASR failure)."""
         self.reference_wav = reference_wav
         self._sim = sim
         self._transcribe = transcribe
@@ -80,7 +62,7 @@ class QualityEvaluator:
 
     def _get_transcribe(self) -> Callable[[str], str]:
         if self._transcribe is None:
-            self._transcribe = _whisper_transcriber()
+            self._transcribe = asr.transcribe
         return self._transcribe
 
     def evaluate(
@@ -104,7 +86,7 @@ class QualityEvaluator:
             "cer": None,
             "transcript": None,
             "sim_model": sim_model,
-            "asr_model": ASR_MODEL,
+            "asr_model": asr_model_name(),
             "errors": [],
         }
         if validation is not None and not validation.get("ok", False):
