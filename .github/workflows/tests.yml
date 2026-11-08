@@ -49,12 +49,17 @@ jobs:
   wav-validation:
     needs: changes
     if: needs.changes.outputs.wav-validation == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # oldest and newest the package claims to support
-        python: ["3.9", "3.13"]
+        # oldest and newest the package claims to support.
+        # setup-python has no 3.9 build for ubuntu-latest (26.04), so 3.9 runs on 24.04.
+        include:
+          - python: "3.9"
+            os: ubuntu-24.04
+          - python: "3.13"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
