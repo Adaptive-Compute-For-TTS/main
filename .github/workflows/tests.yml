@@ -24,6 +24,7 @@ jobs:
       wav-validation: ${{ steps.filter.outputs.wav-validation }}
       backend: ${{ steps.filter.outputs.backend }}
       gpu-executor: ${{ steps.filter.outputs.gpu-executor }}
+      quality-evals: ${{ steps.filter.outputs.quality-evals }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -45,6 +46,9 @@ jobs:
             gpu-executor:
               - *workflow
               - gpu-executor/**
+            quality-evals:
+              - *workflow
+              - quality-evals/**
 
   wav-validation:
     needs: changes
@@ -84,6 +88,22 @@ jobs:
       - run: pip install -r backend/requirements.txt
       # run from the repo root: the tests import `backend.app`
       - run: python -m pytest backend/tests
+
+  # Checks that need no model or torch (the SIM scorer is only imported when scoring real clips).
+  quality-evals:
+    needs: changes
+    if: needs.changes.outputs.quality-evals == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/tests.yml
+      - run: pip install numpy matplotlib soundfile pytest
+      - run: python quality-evals/speaker_sim/pipeline_check.py
+      # TODO after #8 merges: pytest quality-evals/speaker_sim/test_evaluate_run.py
 
   gpu-executor:
     needs: changes
