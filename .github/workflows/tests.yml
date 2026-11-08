@@ -95,3 +95,31 @@ jobs:
       - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e gpu-executor torchdiffeq pytest
       - run: pytest gpu-executor/tests
+
+  # Same tests against real dots.tts (pinned commit + our hook patch), installed by the README's
+  # setup script. test_executor.py runs a tiny random DiT on CPU, so no weights are downloaded.
+  gpu-executor-dots-tts:
+    needs: changes
+    if: needs.changes.outputs.gpu-executor == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DOTS_TTS_COMMIT: 3cb6f94a571097b500038f1619959075282c5c98  # keep in sync with gpu-executor/README.md
+      DOTS_TTS_DIR: ${{ github.workspace }}/../dots.tts
+    defaults:
+      run:
+        working-directory: gpu-executor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gpu-executor/constraints.txt
+      - name: Clone dots.tts and apply the hook patch
+        run: |
+          git init -q "$DOTS_TTS_DIR"
+          git -C "$DOTS_TTS_DIR" fetch -q --depth 1 https://github.com/studio-dots-ai/dots.tts.git "$DOTS_TTS_COMMIT"
+          git -C "$DOTS_TTS_DIR" checkout -q FETCH_HEAD
+          git -C "$DOTS_TTS_DIR" apply "$PWD/patches/dots_tts_scheduler_hook.patch"
+      - run: bash scripts/setup_env.sh cpu
+      - run: .venv/bin/pytest -rs tests
