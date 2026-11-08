@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpu-workers"
+version = "0.1.0"
+description = "GPU worker: turns queued runs into validated WAVs with the fixed-NFE executor"
+requires-python = ">=3.10,<3.13"
+# Not listed as dependencies because they come from this monorepo, not PyPI. scripts/setup_env.sh
+# installs them (editable): torch + dots.tts + adaptive-nfe (gpu-executor/), wav-validation (wav-validation/).
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
