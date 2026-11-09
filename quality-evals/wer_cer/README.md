@@ -13,7 +13,26 @@ cut-off endings. This code produced `wer_arush.csv`, which `../speaker_sim/build
 | `wer_scoring.py` | `score_clip()`: per-clip WER/CER two ways (`full` and `no_intro`), cut-off measures, corpus CER. Also a CLI for a `clips.csv` batch |
 | `score_demo.py` | Scores one WAV or a manifest into one JSON keyed `run_id__prompt_id__nfe` (official version `no_intro`, uncapped) |
 | `tests/` | Unit tests for every metric and normalization rule. They need no audio and no model download |
+| `results/` | Saved WER/CER results (see below) |
 | `prompts/benchmark_prompts_v1.json` | The 54 benchmark prompts (p001–p054). The tests check normalization against them |
+
+## Results
+
+Saved in `results/`. Corpus numbers are total errors / total reference words; no audio is included.
+
+| Folder | What was scored | ASR | Corpus WER | Corpus CER |
+|---|---|---|---|---|
+| `results/nfe_benchmark/` | 972 clips: 2 runs (`orig_3090`, `xvector_4090`) × 54 prompts × 9 NFE values | Whisper `small` | 0.583 (`orig_3090` 0.966, `xvector_4090` 0.200) | 0.568 |
+| `results/demo_clean_set/` | Demo clean set: 12 prompts × NFE 4/20/32 = 36 clips from `xvector_4090` | `large-v3` / `small` | 0.000 / 0.019 | 0.000 / 0.011 |
+
+- `nfe_benchmark/clips_arush.csv`: per-clip WER/CER, transcripts and error counts. `wer_run_info.json`: ASR
+  settings, package versions and normalization rules. `summary.md`: breakdowns by run, NFE and prompt length.
+  `intro_and_cut_findings.md`: why `orig_3090` scores so badly (a leaked spoken intro and a 9.12 s length cap).
+- `demo_clean_set/wer_cer_demo_<model>.json`: one entry per clip keyed `run_id__prompt_id__nfe`, plus corpus
+  totals and totals by NFE. Use the `large-v3` file for the dashboard. All 8 `small` errors are ASR mistakes on
+  rare names in p023, not TTS errors.
+- This CSV is a newer version of `../speaker_sim/results/watai_exp/wer_arush.csv`: the 2026-10-19 digit-group
+  normalization fix changed 2 per-clip WER values and 5 CER values (corpus WER 0.5832 → 0.5831).
 
 ## Install and test
 

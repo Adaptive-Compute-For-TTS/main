@@ -1,0 +1,572 @@
+{
+  "created_utc": "2026-10-19T23:55:31+00:00",
+  "clips": 972,
+  "asr": {
+    "package": "faster-whisper",
+    "faster_whisper_version": "1.2.1",
+    "ctranslate2_version": "4.8.3",
+    "whisper_model": "small",
+    "settings": {
+      "model": "small",
+      "device": "cpu",
+      "compute_type": "int8",
+      "language": "en",
+      "beam_size": 5,
+      "temperature": 0.0,
+      "condition_on_previous_text": false
+    },
+    "rejection": "clips shorter than 0.5 s or with RMS < 1e-3 (about -60 dBFS) are not transcribed"
+  },
+  "normalization": {
+    "base": "Whisper EnglishTextNormalizer (whisper-normalizer 0.1.15)",
+    "pre_rules": [
+      [
+        "\\b((?:[a-z]\\.){2,})",
+        "dotted acronym -> letters joined"
+      ],
+      [
+        "(\\d):(\\d)",
+        "\\1\\2"
+      ],
+      [
+        "(\\d)\\.(\\d\\d)\\s*(am|pm)\\b",
+        "\\1\\2 \\3"
+      ],
+      [
+        "(\\d)[ -](?=0\\d)",
+        "\\1"
+      ],
+      [
+        "\\b(\\d+)\\s+1/2\\b",
+        "\\1.5"
+      ],
+      [
+        "\\b(\\d+)\\s*\u00bd",
+        "\\1.5"
+      ],
+      [
+        "\\bave\\b\\.?",
+        "avenue"
+      ],
+      [
+        "\\bhwy\\b\\.?",
+        "highway"
+      ],
+      [
+        "\\brm\\b\\.?",
+        "room"
+      ],
+      [
+        "\\bjan\\b\\.?",
+        "january"
+      ],
+      [
+        "\\bmar\\b\\.?",
+        "march"
+      ],
+      [
+        "\\bdoor[ -]frame",
+        "doorframe"
+      ],
+      [
+        "\\bquetzal[ -]?feather",
+        "quetzal feather"
+      ],
+      [
+        "\\bstart-?up(?:'s|s)\\b",
+        "startups"
+      ]
+    ],
+    "post_rules": [
+      [
+        "(?<=\\d) (?=\\d)(?!(?:1[5-9]|20)\\d\\d\\b)",
+        ""
+      ],
+      [
+        "\\b(\\d+) and a half\\b",
+        "\\1.5"
+      ]
+    ],
+    "order": "lowercase -> PRE_RULES -> Whisper EnglishTextNormalizer -> POST_RULES -> collapse spaces",
+    "applied_to": "both reference and transcript"
+  },
+  "metrics": {
+    "jiwer_version": "4.0.0",
+    "wer": "(S + D + I) / N reference words, word-level edit distance after normalization",
+    "cer": "character-level edit distance / reference characters (spaces included), after normalization",
+    "corpus_cer": "total character errors / total reference characters over the clips in a group",
+    "corpus_wer": "total errors / total reference words over all clips (not the mean of per-clip WER)",
+    "trailing_dels": "reference words in a deletion chunk at the very end of the jiwer alignment",
+    "missing_end_words": "reference words after the last reference word with a correct match (hit); all reference words if there is no hit. Main measure of cut-off endings.",
+    "heard_ref_words": "ref_words - missing_end_words: reference words up to the last correctly heard word",
+    "heard_errors": "S+D+I between those reference words and the transcript up to the same hit",
+    "wer_heard": "heard_errors / heard_ref_words (official version): WER ignoring a cut-off ending; empty when no word was heard. Corpus wer_heard = total heard_errors / total heard_ref_words.",
+    "capping": "wer and cer = min(official uncapped value, 1.0), rounded to 4 decimals; wer_uncapped/cer_uncapped and all *_full/*_no_intro columns are uncapped",
+    "clips_capped_wer": {
+      "full": 220,
+      "no_intro": 12
+    },
+    "clips_capped_cer": {
+      "full": 169,
+      "no_intro": 8
+    }
+  },
+  "versions": {
+    "official": "no_intro",
+    "full": "transcript as is; any intro speech counts as inserted words",
+    "intro_phrase_raw": "Hey, Adam here. Let's create something that feels real, sounds human, and connects every time.",
+    "intro_phrase_normalized": "hey adam here let us create something that feels real sounds human and connects every time",
+    "no_intro": "align the normalized transcript against (intro phrase words + reference words) with jiwer. The intro is the transcript up to and including the last word that EXACTLY matches an intro word (earlier substitutions/insertions included; substitutions after it are not, so a misheard first word of the sentence stays in the scored part). Deleted intro positions are ignored (the intro may be partial or absent). Those words (always a leading run) are in intro_text, normalized. The remaining transcript words are aligned against the reference alone to give the no_intro wer, cer, subs, dels, ins, trailing_dels, missing_end_words and heard_* values."
+  },
+  "corpus_wer": {
+    "full": {
+      "wer": 0.7087806220754198,
+      "errors": 15450,
+      "ref_words": 21798,
+      "clips": 972
+    },
+    "no_intro": {
+      "wer": 0.5830810166070282,
+      "errors": 12710,
+      "ref_words": 21798,
+      "clips": 972
+    }
+  },
+  "corpus_wer_heard": {
+    "wer": 0.047443803461308935,
+    "errors": 477,
+    "heard_ref_words": 10054,
+    "clips_with_nothing_heard": 276
+  },
+  "corpus_cer": {
+    "all": {
+      "all": {
+        "full": {
+          "cer": 0.6023286759813706,
+          "char_errors": 72424,
+          "ref_chars": 120240,
+          "clips": 972
+        },
+        "no_intro": {
+          "cer": 0.5682385229540918,
+          "char_errors": 68325,
+          "ref_chars": 120240,
+          "clips": 972
+        }
+      }
+    },
+    "run_id": {
+      "orig_3090": {
+        "full": {
+          "cer": 1.0248669328010644,
+          "char_errors": 61615,
+          "ref_chars": 60120,
+          "clips": 486
+        },
+        "no_intro": {
+          "cer": 0.956686626746507,
+          "char_errors": 57516,
+          "ref_chars": 60120,
+          "clips": 486
+        }
+      },
+      "xvector_4090": {
+        "full": {
+          "cer": 0.17979041916167665,
+          "char_errors": 10809,
+          "ref_chars": 60120,
+          "clips": 486
+        },
+        "no_intro": {
+          "cer": 0.17979041916167665,
+          "char_errors": 10809,
+          "ref_chars": 60120,
+          "clips": 486
+        }
+      }
+    },
+    "nfe": {
+      "4": {
+        "full": {
+          "cer": 0.6410928143712575,
+          "char_errors": 8565,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5883982035928144,
+          "char_errors": 7861,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "6": {
+        "full": {
+          "cer": 0.614745508982036,
+          "char_errors": 8213,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5767964071856287,
+          "char_errors": 7706,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "8": {
+        "full": {
+          "cer": 0.5942365269461077,
+          "char_errors": 7939,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.545434131736527,
+          "char_errors": 7287,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "10": {
+        "full": {
+          "cer": 0.5711826347305389,
+          "char_errors": 7631,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5380239520958083,
+          "char_errors": 7188,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "12": {
+        "full": {
+          "cer": 0.568188622754491,
+          "char_errors": 7591,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5462574850299401,
+          "char_errors": 7298,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "16": {
+        "full": {
+          "cer": 0.6536676646706587,
+          "char_errors": 8733,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.6129491017964072,
+          "char_errors": 8189,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "20": {
+        "full": {
+          "cer": 0.5978293413173653,
+          "char_errors": 7987,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5835329341317366,
+          "char_errors": 7796,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "24": {
+        "full": {
+          "cer": 0.6026946107784431,
+          "char_errors": 8052,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5844311377245509,
+          "char_errors": 7808,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      },
+      "32": {
+        "full": {
+          "cer": 0.5773203592814371,
+          "char_errors": 7713,
+          "ref_chars": 13360,
+          "clips": 108
+        },
+        "no_intro": {
+          "cer": 0.5383233532934132,
+          "char_errors": 7192,
+          "ref_chars": 13360,
+          "clips": 108
+        }
+      }
+    },
+    "run_id x nfe": {
+      "orig_3090 nfe4": {
+        "full": {
+          "cer": 1.0796407185628742,
+          "char_errors": 7212,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.974251497005988,
+          "char_errors": 6508,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe6": {
+        "full": {
+          "cer": 1.0303892215568862,
+          "char_errors": 6883,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9544910179640719,
+          "char_errors": 6376,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe8": {
+        "full": {
+          "cer": 1.0146706586826348,
+          "char_errors": 6778,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.917065868263473,
+          "char_errors": 6126,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe10": {
+        "full": {
+          "cer": 0.9726047904191617,
+          "char_errors": 6497,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9062874251497006,
+          "char_errors": 6054,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe12": {
+        "full": {
+          "cer": 0.9670658682634731,
+          "char_errors": 6460,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9232035928143713,
+          "char_errors": 6167,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe16": {
+        "full": {
+          "cer": 1.1399700598802396,
+          "char_errors": 7615,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 1.0585329341317364,
+          "char_errors": 7071,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe20": {
+        "full": {
+          "cer": 1.0008982035928145,
+          "char_errors": 6686,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9723053892215568,
+          "char_errors": 6495,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe24": {
+        "full": {
+          "cer": 1.0330838323353293,
+          "char_errors": 6901,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9965568862275449,
+          "char_errors": 6657,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "orig_3090 nfe32": {
+        "full": {
+          "cer": 0.9854790419161676,
+          "char_errors": 6583,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.9074850299401198,
+          "char_errors": 6062,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe4": {
+        "full": {
+          "cer": 0.2025449101796407,
+          "char_errors": 1353,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.2025449101796407,
+          "char_errors": 1353,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe6": {
+        "full": {
+          "cer": 0.19910179640718562,
+          "char_errors": 1330,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.19910179640718562,
+          "char_errors": 1330,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe8": {
+        "full": {
+          "cer": 0.17380239520958085,
+          "char_errors": 1161,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.17380239520958085,
+          "char_errors": 1161,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe10": {
+        "full": {
+          "cer": 0.16976047904191616,
+          "char_errors": 1134,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.16976047904191616,
+          "char_errors": 1134,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe12": {
+        "full": {
+          "cer": 0.169311377245509,
+          "char_errors": 1131,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.169311377245509,
+          "char_errors": 1131,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe16": {
+        "full": {
+          "cer": 0.16736526946107785,
+          "char_errors": 1118,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.16736526946107785,
+          "char_errors": 1118,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe20": {
+        "full": {
+          "cer": 0.19476047904191618,
+          "char_errors": 1301,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.19476047904191618,
+          "char_errors": 1301,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe24": {
+        "full": {
+          "cer": 0.1723053892215569,
+          "char_errors": 1151,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.1723053892215569,
+          "char_errors": 1151,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      },
+      "xvector_4090 nfe32": {
+        "full": {
+          "cer": 0.1691616766467066,
+          "char_errors": 1130,
+          "ref_chars": 6680,
+          "clips": 54
+        },
+        "no_intro": {
+          "cer": 0.1691616766467066,
+          "char_errors": 1130,
+          "ref_chars": 6680,
+          "clips": 54
+        }
+      }
+    }
+  },
+  "silent_clips": "clips rejected as silent/short (or with an empty transcript) are kept with WER = CER = 1.0 and every reference word counted as a deletion, in both versions"
+}
