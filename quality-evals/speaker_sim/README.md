@@ -213,8 +213,7 @@ quality = qe.evaluate(audio_path, prompt, validation=v)   # never raises
 - Sai's `result` layout: `validation` (WAV checks), `metrics` (runtime), `quality` (this dict). Quality scoring finishes before the run is marked completed.
 - A clip that failed validation is not scored. A scorer that fails leaves its metric `None` and adds an entry to `errors`; the other metric still comes back.
 - No `sim_hi_nfe` (needs a second generation at the highest NFE) and no `latency_outlier` (needs the whole run): those stay batch-only.
-- WER/CER here lowercases and strips punctuation, capped at 1. Arush's scorer also expands contractions and strips a re-spoken intro, so numbers can differ slightly from `wer_arush.csv` until the two are merged.
-- Tests: `pytest test_evaluate_run.py` (fakes, no model or torch needed).
+- Tests: `pytest test_evaluate_run.py` (fakes, no models or torch, but needs `quality-evals/wer_cer/requirements.txt`).
 
 ## Per-run JSON for the dashboard
 
