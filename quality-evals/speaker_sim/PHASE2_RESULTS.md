@@ -1,6 +1,6 @@
 # Phase 2 results: speaker similarity, WER and latency vs NFE
 
-Data: Nick's two full sweeps in [watai_exp](https://github.com/Adaptive-Compute-For-TTS/watai_exp) (`experiments/nfe_benchmark_runs`), 54 prompts (18 short / 18 medium / 18 long) × NFE 4, 6, 8, 10, 12, 16, 20, 24, 32, seed 42, one generation each, all cloning `experiments/my_files/abhi1.wav`. WER from Arush (Whisper "small", per clip, 2026-10-15).
+Data: Nick's two full sweeps in [watai_exp](https://github.com/Adaptive-Compute-For-TTS/watai_exp) (`experiments/nfe_benchmark_runs`), 54 prompts (18 short / 18 medium / 18 long) × NFE 4, 6, 8, 10, 12, 16, 20, 24, 32, seed 42, one generation each, all cloning `experiments/my_files/abhi1.wav`. WER from Arush (Whisper "small", per clip, 2026-10-15, with his 2026-10-19 normalization fix; `wer_arush.csv` is a copy of `quality-evals/wer_cer/results/nfe_benchmark/clips_arush.csv`).
 
 | run_id | folders | GPU (run owner) |
 |---|---|---|
@@ -21,12 +21,12 @@ On the x-vector run, **NFE 4 says the words as well as NFE 32 and sounds almost 
 | NFE | 4 | 6 | 8 | 10 | 12 | 16 | 20 | 24 | 32 |
 |---|---|---|---|---|---|---|---|---|---|
 | SIM vs reference | 0.917 | 0.923 | 0.924 | 0.928 | 0.929 | 0.930 | 0.925 | 0.930 | 0.930 |
-| WER | 0.121 | 0.135 | 0.119 | 0.113 | 0.108 | 0.109 | 0.129 | 0.116 | 0.108 |
-| WER on spoken words | 0.022 | 0.031 | 0.028 | 0.025 | 0.020 | 0.027 | 0.026 | 0.031 | 0.023 |
-| Clips cut off | 33% | 35% | 33% | 33% | 35% | 35% | 31% | 33% | 33% |
+| WER | 0.121 | 0.130 | 0.119 | 0.113 | 0.108 | 0.109 | 0.129 | 0.116 | 0.108 |
+| WER on spoken words | 0.022 | 0.030 | 0.028 | 0.025 | 0.020 | 0.027 | 0.026 | 0.031 | 0.023 |
+| Clips cut off | 33% | 33% | 33% | 33% | 35% | 35% | 31% | 33% | 33% |
 | RTF | 0.81 | 1.05 | 1.30 | 1.51 | 1.72 | 2.20 | 2.67 | 3.16 | 4.09 |
 
-**1. WER doesn't depend on NFE.** Paired with the same prompt at NFE 32, no NFE from 4 to 24 changes WER on spoken words (every 95% CI includes 0). Overall WER shows one blip (NFE 6: +0.026, CI +0.005 to +0.050) that the spoken-words WER doesn't confirm, so it is most likely truncation noise.
+**1. WER doesn't depend on NFE.** Paired with the same prompt at NFE 32, no NFE from 4 to 24 changes WER on spoken words (every 95% CI includes 0). Overall WER shows one blip (NFE 6: +0.021, CI +0.001 to +0.044) that the spoken-words WER doesn't confirm, so it is most likely truncation noise.
 
 **2. Long prompts get cut off at every NFE.** Every x-vector clip stops at 12.8 s at most, and 157 of the 162 long-prompt clips (about 43 words each) hit that cap with words missing. That's why long prompts have WER ≈ 0.25–0.31 while short and medium sit at 0.02–0.06; on the words they did say, long prompts score 0.01–0.03 like everything else. The cap matches `max_generate_length = 80` in the benchmark settings (80 × 0.16 s = 12.8 s); raising it is a generation-config fix, not an NFE question.
 
@@ -51,11 +51,11 @@ Bold = 95% CI excludes 0. (*NFE 20 also excludes 0, but with this many compariso
 | NFE | 4 | 6 | 8 | 10 | 12 | 16 | 20 | 24 | 32 |
 |---|---|---|---|---|---|---|---|---|---|
 | SIM vs reference | 0.910 | 0.914 | 0.917 | 0.923 | 0.923 | 0.925 | 0.919 | 0.923 | 0.924 |
-| WER | 0.025 | 0.045 | 0.044 | 0.037 | 0.035 | 0.038 | 0.040 | 0.040 | 0.026 |
+| WER | 0.025 | 0.038 | 0.044 | 0.037 | 0.035 | 0.038 | 0.040 | 0.040 | 0.026 |
 | RTF | 0.83 | 1.05 | 1.32 | 1.52 | 1.72 | 2.20 | 2.67 | 3.17 | 4.12 |
 
 - **SIM:** paired with NFE 32, the drop is −0.014 at NFE 4 and −0.010 at NFE 6 (both 95% CIs exclude 0), and nothing from NFE 8 up is distinguishable from 0.
-- **WER:** changes are at most 0.02 and nearly all CIs include 0. One delta (NFE 16, +0.012) excludes 0, one hit in eight comparisons, so don't read it as a trend. Absolute levels (0.025–0.045) are close to the 0.047 Whisper small gave on Arush's human recordings.
+- **WER:** changes are at most 0.02 and nearly all CIs include 0. One delta (NFE 16, +0.012) excludes 0, one hit in eight comparisons, so don't read it as a trend. Absolute levels (0.025–0.044) are close to the 0.047 Whisper small gave on Arush's human recordings.
 - **Cost:** RTF = 0.35 + 0.117 × NFE (R² 0.97), as before.
 - Short prompts sit 0.02–0.04 below medium on SIM at every NFE, as before; compare NFEs within a bucket.
 

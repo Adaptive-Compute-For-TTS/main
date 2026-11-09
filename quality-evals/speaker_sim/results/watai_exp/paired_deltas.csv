@@ -165,8 +165,8 @@ xvector_4090,all,4,32,wer_heard,54,-7.4e-05,-0.009209,0.010024,False
 xvector_4090,all,4,32,latency_ms,54,-24177.668519,-27829.188102,-20584.876806,True
 xvector_4090,all,4,32,rtf,54,-3.282797,-3.351265,-3.214915,True
 xvector_4090,all,6,32,sim_ref,54,-0.007719,-0.013511,-0.001868,True
-xvector_4090,all,6,32,wer,54,0.026107,0.004777,0.049767,True
-xvector_4090,all,6,32,wer_heard,54,0.008519,-0.005939,0.027854,False
+xvector_4090,all,6,32,wer,54,0.021315,0.001128,0.043826,True
+xvector_4090,all,6,32,wer_heard,54,0.00743,-0.006467,0.026602,False
 xvector_4090,all,6,32,latency_ms,54,-22405.522222,-25790.302407,-19056.413472,True
 xvector_4090,all,6,32,rtf,54,-3.045152,-3.119679,-2.968646,True
 xvector_4090,all,8,32,sim_ref,54,-0.006324,-0.012296,-0.000492,True
@@ -245,8 +245,8 @@ xvector_4090,medium,4,32,wer_heard,18,0.006533,-0.009817,0.029417,False
 xvector_4090,medium,4,32,latency_ms,18,-21499.294444,-23682.999861,-19405.344167,True
 xvector_4090,medium,4,32,rtf,18,-3.286067,-3.3896,-3.173705,True
 xvector_4090,medium,6,32,sim_ref,18,-0.009417,-0.018384,-0.001761,True
-xvector_4090,medium,6,32,wer,18,0.004783,-0.020894,0.0294,False
-xvector_4090,medium,6,32,wer_heard,18,0.012722,-0.003622,0.032678,False
+xvector_4090,medium,6,32,wer,18,0.001517,-0.022422,0.022883,False
+xvector_4090,medium,6,32,wer_heard,18,0.009456,-0.006544,0.026144,False
 xvector_4090,medium,6,32,latency_ms,18,-20293.866667,-22389.143333,-18288.352778,True
 xvector_4090,medium,6,32,rtf,18,-3.087856,-3.180972,-2.993053,True
 xvector_4090,medium,8,32,sim_ref,18,-0.014389,-0.024256,-0.0056,True
@@ -285,7 +285,7 @@ xvector_4090,short,4,32,wer_heard,18,0.0,0.0,0.0,False
 xvector_4090,short,4,32,latency_ms,18,-9087.666667,-10095.532222,-8054.085694,True
 xvector_4090,short,4,32,rtf,18,-3.28529,-3.453936,-3.136159,True
 xvector_4090,short,6,32,sim_ref,18,-0.010006,-0.023522,0.00404,False
-xvector_4090,short,6,32,wer,18,0.033333,0.0,0.088889,False
+xvector_4090,short,6,32,wer,18,0.022222,0.0,0.066667,False
 xvector_4090,short,6,32,wer_heard,18,0.022222,0.0,0.066667,False
 xvector_4090,short,6,32,latency_ms,18,-8405.166667,-9416.949583,-7344.877361,True
 xvector_4090,short,6,32,rtf,18,-3.038417,-3.224965,-2.852322,True

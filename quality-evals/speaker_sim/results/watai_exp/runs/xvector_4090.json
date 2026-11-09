@@ -2380,10 +2380,10 @@
    "seed": "42",
    "sim_ref": 0.9101,
    "sim_hi_nfe": 0.9352,
-   "wer": 0.2,
+   "wer": 0.0,
    "wer_heard": 0.0,
-   "cer": 0.0455,
-   "missing_end_words": 1.0,
+   "cer": 0.0,
+   "missing_end_words": 0.0,
    "latency_ms": 3193.3,
    "rtf": 0.907192,
    "duration_s": 3.52,
@@ -2578,9 +2578,9 @@
    "seed": "42",
    "sim_ref": 0.8565,
    "sim_hi_nfe": 0.9348,
-   "wer": 0.1176,
-   "wer_heard": 0.1176,
-   "cer": 0.0337,
+   "wer": 0.0588,
+   "wer_heard": 0.0588,
+   "cer": 0.0225,
    "missing_end_words": 0.0,
    "latency_ms": 6424.0,
    "rtf": 0.933721,
@@ -11321,9 +11321,9 @@
    "nfe": 6,
    "metric": "wer",
    "n": 36,
-   "mean": 0.044869,
-   "ci_low": 0.015303,
-   "ci_high": 0.085492
+   "mean": 0.037681,
+   "ci_low": 0.010817,
+   "ci_high": 0.077669
   },
   {
    "run_id": "xvector_4090",
@@ -11331,9 +11331,9 @@
    "nfe": 6,
    "metric": "wer_heard",
    "n": 36,
-   "mean": 0.039314,
-   "ci_low": 0.011653,
-   "ci_high": 0.079403
+   "mean": 0.037681,
+   "ci_low": 0.010817,
+   "ci_high": 0.077669
   },
   {
    "run_id": "xvector_4090",
@@ -11341,9 +11341,9 @@
    "nfe": 6,
    "metric": "cer",
    "n": 36,
-   "mean": 0.017567,
-   "ci_low": 0.004939,
-   "ci_high": 0.03772
+   "mean": 0.015992,
+   "ci_low": 0.003766,
+   "ci_high": 0.036039
   },
   {
    "run_id": "xvector_4090",
@@ -11351,9 +11351,9 @@
    "nfe": 6,
    "metric": "truncated",
    "n": 36,
-   "mean": 0.027778,
+   "mean": 0.0,
    "ci_low": 0.0,
-   "ci_high": 0.083333
+   "ci_high": 0.0
   },
   {
    "run_id": "xvector_4090",
@@ -12131,9 +12131,9 @@
    "nfe": 6,
    "metric": "wer",
    "n": 18,
-   "mean": 0.036033,
-   "ci_low": 0.012378,
-   "ci_high": 0.062528
+   "mean": 0.032767,
+   "ci_low": 0.009894,
+   "ci_high": 0.0589
   },
   {
    "run_id": "xvector_4090",
@@ -12141,9 +12141,9 @@
    "nfe": 6,
    "metric": "wer_heard",
    "n": 18,
-   "mean": 0.036033,
-   "ci_low": 0.012378,
-   "ci_high": 0.062528
+   "mean": 0.032767,
+   "ci_low": 0.009894,
+   "ci_high": 0.0589
   },
   {
    "run_id": "xvector_4090",
@@ -12151,9 +12151,9 @@
    "nfe": 6,
    "metric": "cer",
    "n": 18,
-   "mean": 0.01345,
-   "ci_low": 0.004422,
-   "ci_high": 0.023733
+   "mean": 0.012828,
+   "ci_low": 0.003989,
+   "ci_high": 0.022917
   },
   {
    "run_id": "xvector_4090",
@@ -12941,9 +12941,9 @@
    "nfe": 6,
    "metric": "wer",
    "n": 18,
-   "mean": 0.053706,
+   "mean": 0.042594,
    "ci_low": 0.0,
-   "ci_high": 0.129633
+   "ci_high": 0.118522
   },
   {
    "run_id": "xvector_4090",
@@ -12961,9 +12961,9 @@
    "nfe": 6,
    "metric": "cer",
    "n": 18,
-   "mean": 0.021683,
+   "mean": 0.019156,
    "ci_low": 0.0,
-   "ci_high": 0.0582
+   "ci_high": 0.055672
   },
   {
    "run_id": "xvector_4090",
@@ -12971,9 +12971,9 @@
    "nfe": 6,
    "metric": "truncated",
    "n": 18,
-   "mean": 0.055556,
+   "mean": 0.0,
    "ci_low": 0.0,
-   "ci_high": 0.166667
+   "ci_high": 0.0
   },
   {
    "run_id": "xvector_4090",
@@ -13716,9 +13716,9 @@
    "vs_nfe": 32,
    "metric": "wer",
    "n": 36,
-   "mean_delta": 0.019058,
-   "ci_low": -0.004319,
-   "ci_high": 0.049125,
+   "mean_delta": 0.011869,
+   "ci_low": -0.008289,
+   "ci_high": 0.039692,
    "ci_excludes_zero": false
   },
   {
@@ -13728,9 +13728,9 @@
    "vs_nfe": 32,
    "metric": "wer_heard",
    "n": 36,
-   "mean_delta": 0.017472,
-   "ci_low": -0.000175,
-   "ci_high": 0.044444,
+   "mean_delta": 0.015839,
+   "ci_low": -0.000353,
+   "ci_high": 0.042633,
    "ci_excludes_zero": false
   },
   {
@@ -14196,9 +14196,9 @@
    "vs_nfe": 32,
    "metric": "wer",
    "n": 18,
-   "mean_delta": 0.004783,
-   "ci_low": -0.020894,
-   "ci_high": 0.0294,
+   "mean_delta": 0.001517,
+   "ci_low": -0.022422,
+   "ci_high": 0.022883,
    "ci_excludes_zero": false
   },
   {
@@ -14208,9 +14208,9 @@
    "vs_nfe": 32,
    "metric": "wer_heard",
    "n": 18,
-   "mean_delta": 0.012722,
-   "ci_low": -0.003622,
-   "ci_high": 0.032678,
+   "mean_delta": 0.009456,
+   "ci_low": -0.006544,
+   "ci_high": 0.026144,
    "ci_excludes_zero": false
   },
   {
@@ -14676,9 +14676,9 @@
    "vs_nfe": 32,
    "metric": "wer",
    "n": 18,
-   "mean_delta": 0.033333,
+   "mean_delta": 0.022222,
    "ci_low": 0.0,
-   "ci_high": 0.088889,
+   "ci_high": 0.066667,
    "ci_excludes_zero": false
   },
   {
