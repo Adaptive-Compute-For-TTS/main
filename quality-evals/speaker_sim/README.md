@@ -209,7 +209,7 @@ quality = qe.evaluate(audio_path, prompt, validation=v)   # never raises
 #  "sim_model": "microsoft/wavlm-base-plus-sv@feb593a...", "asr_model": "faster-whisper-small", "errors": []}
 ```
 
-- WER/CER and the transcript come from the shared scorer in `quality-evals/wer_cer` (the one behind `wer_arush.csv`), so per-run and sweep numbers match. Install `quality-evals/wer_cer/requirements.txt` as well as the SIM requirements.
+- WER/CER and the transcript come from the shared scorer in `quality-evals/wer_cer` (the one behind `wer_arush.csv`), so per-run and sweep numbers match. In the worker's venv, install `requirements-worker.txt` with gpu-executor's constraints (its header has the command). For a standalone setup, install `quality-evals/wer_cer/requirements.txt` as well as the SIM requirements.
 - Sai's `result` layout: `validation` (WAV checks), `metrics` (runtime), `quality` (this dict). Quality scoring finishes before the run is marked completed.
 - A clip that failed validation is not scored. A scorer that fails leaves its metric `None` and adds an entry to `errors`; the other metric still comes back.
 - No `sim_hi_nfe` (needs a second generation at the highest NFE) and no `latency_outlier` (needs the whole run): those stay batch-only.

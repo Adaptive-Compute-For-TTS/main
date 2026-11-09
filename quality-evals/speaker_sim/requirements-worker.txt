@@ -1,0 +1,19 @@
+# What evaluate_run.py needs inside the GPU worker's venv (gpu-executor/.venv), on top of gpu-executor's
+# torch and dots.tts. Install with gpu-executor's constraints, from the repo root:
+#   pip install -r quality-evals/speaker_sim/requirements-worker.txt -c gpu-executor/constraints.txt
+#
+# Unpinned packages take their version from those constraints. requirements.txt here and in wer_cer
+# conflict with them, so don't install those into the worker venv.
+transformers
+librosa
+soundfile
+numpy
+
+# Pinned because they change the numbers: whisper-normalizer 1.0.0 scores p018 differently from 0.1.15.
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+jiwer==4.0.0
+whisper-normalizer==0.1.15
+# av 19 removed an argument faster-whisper 1.2.1 passes, so every transcription fails. 17.1.0 is tested.
+av<18
+pandas
