@@ -1,0 +1,8 @@
+# torch and torchaudio MUST share the same minor version and be installed from
+# the cu130 wheel index (see README "Setup"):
+#   pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu130
+torch==2.11.0
+torchaudio==2.11.0
+nvidia-ml-py
+numpy
+dots.tts==0.3.1
