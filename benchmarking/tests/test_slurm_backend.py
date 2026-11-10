@@ -105,3 +105,28 @@ def test_uv_env_script_pins_model_requirements() -> None:
 def test_invalid_python_env() -> None:
     with pytest.raises(ValueError):
         SlurmBackend(ComponentSpec(name="sine"), host="x", python_env="conda", shell=lambda c, s=None: b"")
+
+
+def test_model_sources_are_uploaded_and_setup_runs_in_the_env_build(fake_cluster) -> None:
+    home, shell = fake_cluster
+    backend = SlurmBackend(
+        ComponentSpec(name="dots_tts_executor"), host="fake", local_root=str(REPO), poll_s=0, shell=shell
+    )
+    with backend:
+        pass
+    assert (home / "ttsbench/build/gpu-executor/patches/dots_tts_scheduler_hook.patch").is_file()
+    assert (home / "ttsbench/build/gpu-executor/src/adaptive_nfe/fixed_nfe.py").is_file()
+    assert not list((home / "ttsbench/build").rglob("__pycache__"))
+
+    script = backend.render_script(_job(4, ()), "$HOME/ttsbench/jobs/x")
+    assert 'git -C "$HOME/ttsbench/build/dots.tts" apply "$HOME/ttsbench/build/gpu-executor/patches/' in script
+    assert f".tmp-{backend._session}/bin/python" in script
+    assert 'uv pip install --python "$HOME/ttsbench/envs/' in script
+    assert script.index('dots.tts" apply') < script.index('  rm -rf "$HOME/ttsbench/envs/')
+
+
+def test_env_id_changes_when_setup_changes() -> None:
+    noop = lambda c, s=None: b""  # noqa: E731
+    stock = SlurmBackend(ComponentSpec(name="dots_tts"), host="x", shell=noop)._env_setup()
+    patched = SlurmBackend(ComponentSpec(name="dots_tts_executor"), host="x", shell=noop)._env_setup()
+    assert stock[-1] != patched[-1]

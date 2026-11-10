@@ -125,6 +125,7 @@ def execute_job(job: Job, assets_root: Path | None = None) -> JobResult:
                     audio_sha256=fingerprint(waveform),
                     audio_path=f"audio/{key}.wav" if key in audio else None,
                     telemetry=telemetry,
+                    extras=output.extras,
                 )
             )
 

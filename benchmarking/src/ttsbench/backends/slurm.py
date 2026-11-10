@@ -24,6 +24,7 @@ from typing import Any
 
 from ttsbench.backends.base import Backend
 from ttsbench.models import MODELS
+from ttsbench.models.base import source_files
 from ttsbench.schema import ComponentSpec, Job, JobResult
 
 TERMINAL_OK = {"COMPLETED"}
@@ -47,11 +48,16 @@ def ssh_shell(host: str, options: tuple[str, ...] = ()) -> Shell:
     return run
 
 
-def _tarball(local_root: Path) -> bytes:
+def _tarball(local_root: Path, sources: tuple[tuple[Path, str], ...] = ()) -> bytes:
+    """The source tree, plus each model source under `build/<name>`."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
         for rel in _UPLOAD:
             tar.add(local_root / rel, arcname=rel, filter=lambda t: None if "__pycache__" in t.name else t)
+        for local, name in sources:
+            for path in source_files(local):
+                rel = path.relative_to(local).as_posix() if local.is_dir() else ""
+                tar.add(path, arcname=f"build/{name}/{rel}".rstrip("/"))
     return buffer.getvalue()
 
 
@@ -98,7 +104,11 @@ class SlurmBackend(Backend):
 
     def __enter__(self) -> SlurmBackend:
         root = self._root()
-        self.shell(f"rm -rf {root}/src && mkdir -p {root} && tar -xzf - -C {root}", _tarball(self.local_root))
+        sources = MODELS.resolve(self.model.name).requirements.sources
+        self.shell(
+            f"rm -rf {root}/src {root}/build && mkdir -p {root} && tar -xzf - -C {root}",
+            _tarball(self.local_root, sources),
+        )
         return self
 
     def __exit__(self, *exc_info: Any) -> None:
@@ -146,15 +156,20 @@ class SlurmBackend(Backend):
             return [f"PY={shlex.quote(self.python)}"]
         req = MODELS.resolve(self.model.name).requirements
         packages = [*req.pip, *_BASE_PACKAGES]
-        env_id = hashlib.sha256("\n".join([req.python, *packages]).encode()).hexdigest()[:12]
+        key = [req.python, *packages, *req.setup, req.sources_digest() if req.sources else ""]
+        env_id = hashlib.sha256("\n".join(key).encode()).hexdigest()[:12]
         pkgs = " ".join(shlex.quote(p) for p in packages)
         venv = f"{self._root()}/envs/{env_id}"
+        tmp = f"{venv}.tmp-{self._session}"  # per session, so concurrent builds of one env can't collide
+        pip = f'uv pip install --python "{tmp}/bin/python"'
+        setup = req.setup_commands(build=f"{self._root()}/build", pip=pip)
         return [
             'export PATH="$HOME/.local/bin:$PATH"',
             "command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh",
             f'if [ ! -x "{venv}/bin/python" ]; then',
-            f'  uv venv --python {req.python} "{venv}.tmp" && uv pip install --python "{venv}.tmp/bin/python" {pkgs}',
-            f'  rm -rf "{venv}" && mv "{venv}.tmp" "{venv}"',
+            f'  uv venv --python {req.python} "{tmp}" && {pip} {pkgs}',
+            *(f"  {command}" for command in setup),
+            f'  rm -rf "{venv}" && mv "{tmp}" "{venv}"',
             "fi",
             f'PY="{venv}/bin/python"',
         ]

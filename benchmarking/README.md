@@ -19,11 +19,14 @@ of the rough laptop timings in `gpu-executor/README.md`.
 - `gpu-telemetry/` can plug in as a probe (`measure/probes.py`): per-sample GPU stats land in `Sample.telemetry`.
 - `quality-evals/` scorers can run on a run's audio through `ttsbench manifest` + `ttsbench eval`.
 
+Run everything from `benchmarking/`.
+
 ```bash
 uv sync --extra modal            # add --extra publish for push
 uv run ttsbench run configs/smoke-sine.yaml            # CPU stand-in model, a few seconds
 uv run ttsbench run configs/dots-example.yaml          # dots.tts on a Modal H100
 uv run ttsbench run configs/dots-watcloud.yaml         # dots.tts on WATcloud (SLURM)
+uv run ttsbench run configs/executor-modal.yaml        # gpu-executor's fixed-NFE executor on a Modal H100
 uv run ttsbench run configs/dots-example.yaml --set sweep.nfe=[8,16] --set backend.params.gpu=A100-80GB
 uv run ttsbench ls
 uv run ttsbench compare runs/<baseline> runs/<candidate>   # speedup per NFE + audio equality
@@ -36,12 +39,35 @@ uv run ttsbench compare runs/<baseline> runs/<candidate>   # speedup per NFE + a
 | `src/ttsbench/schema.py` | Data contracts: config, `Job`, `Sample`, `JobResult` |
 | `src/ttsbench/worker.py` | The measured loop. Runs inside the execution environment |
 | `src/ttsbench/measure/` | Timing, environment capture, telemetry probes |
-| `src/ttsbench/models/` | Model adapters (`dots_tts`, `sine` stand-in) |
+| `src/ttsbench/models/` | Model adapters (`dots_tts`, `dots_tts_executor`, `sine` stand-in) |
 | `src/ttsbench/backends/` | Where jobs run (`local`, `modal`, `slurm` / `watcloud`) |
 | `src/ttsbench/storage.py` | Run directory format |
 | `src/ttsbench/publish.py`, `sql/schema.sql` | Upload runs to S3 + index them in Postgres |
 | `benchmarks/prompts/` | Versioned prompt sets (JSONL). `v0` is a placeholder until the canonical set lands |
 | `configs/` | Experiment configs |
+
+## Benchmarking gpu-executor
+
+The `dots_tts_executor` model installs dots.tts at `3cb6f94` with `gpu-executor/patches/dots_tts_scheduler_hook.patch`
+applied, plus `adaptive_nfe` from `gpu-executor/src`, both copied from this checkout at build time. `mode` picks the path,
+all on that same build, so any two modes compare directly:
+
+| `mode` | What runs |
+| --- | --- |
+| `stock` | `runtime.generate(num_steps=nfe)`, hooks unset (stock dots.tts) |
+| `scheduler` | `generate_fixed_nfe(use_executor=False)`: NFE frozen per patch, dots.tts's own DiT loop |
+| `executor` | `generate_fixed_nfe`: our executor runs every patch (`decode_patch`, or `decode_patch_optimized` with `optimize: true`) |
+
+```bash
+uv run ttsbench run configs/executor-modal.yaml --set model.params.mode=stock
+uv run ttsbench run configs/executor-modal.yaml                                  # eager executor
+uv run ttsbench run configs/executor-modal.yaml --set model.params.optimize=true # fast path
+uv run ttsbench compare runs/<stock> runs/<executor>    # speedup per NFE; eager executor audio should be identical
+```
+
+Each sample's `extras` holds `num_patches` and `nfe_per_patch`. With `optimize: true`, dots.tts compiles in the
+per-NFE warmup, and its audio is only reproducible within one process (see `gpu-executor/README.md`), so compare
+optimized runs by latency, not by audio hash.
 
 ## Plugging things in
 
@@ -51,7 +77,8 @@ Each extension point is a registry keyed by the name used in configs.
   by getting the job to `ttsbench.worker.execute_job` and returning the result. Provision in
   `__enter__` and release in `__exit__`. Register it in `backends/__init__.py`. Backends never time
   anything, so a slow transport can't skew results.
-- **Model** (what runs): subclass `models.base.TTSModel` (`load`, `synthesize`, `requirements`). Use
+- **Model** (what runs): subclass `models.base.TTSModel` (`load`, `synthesize`, `requirements`). `Requirements.sources` +
+  `setup` cover builds pip can't express (clone, patch, install local packages); both backends run them. Use
   `timer.stage("name")` to attribute time to stages. Stage timers use CUDA events and never force a sync.
 - **Telemetry probe** (per-sample GPU stats): subclass `measure.probes.Probe`, register it, and list
   it under `probes:`. Its output is stored in `Sample.telemetry`.

@@ -18,6 +18,7 @@ from ttsbench.worker import ASSETS_ROOT_ENV, execute_job_payload
 
 _REMOTE_ASSETS = "/assets"
 _HF_CACHE = "/cache/hf"
+_BUILD_DIR = "/opt/ttsbench-build"
 _BASE_PACKAGES = ("numpy>=1.26", "pydantic>=2.10", "pyyaml>=6.0", "soundfile>=0.12")
 
 
@@ -54,6 +55,14 @@ class ModalBackend(Backend):
         # Model pins first so ttsbench's loose base requirements never override them.
         if req.pip:
             image = image.pip_install(*req.pip)
+        for local, name in req.sources:
+            remote = f"{_BUILD_DIR}/{name}"
+            if local.is_dir():
+                image = image.add_local_dir(local, remote, copy=True, ignore=["**/__pycache__"])
+            else:
+                image = image.add_local_file(local, remote, copy=True)
+        if req.setup:
+            image = image.run_commands(*req.setup_commands(build=_BUILD_DIR, pip="python -m pip install"))
         image = image.pip_install(*_BASE_PACKAGES)
         image = image.env({ASSETS_ROOT_ENV: _REMOTE_ASSETS, "HF_HOME": _HF_CACHE})
         if self.assets_root.is_dir():

@@ -131,6 +131,7 @@ class Sample(_Frozen):
     audio_sha256: str
     audio_path: str | None = None
     telemetry: dict[str, Any] = Field(default_factory=dict)
+    extras: dict[str, Any] = Field(default_factory=dict, description="Model-reported facts, e.g. NFE per patch.")
 
 
 class WorkerInfo(_Frozen):

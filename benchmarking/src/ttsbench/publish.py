@@ -125,6 +125,7 @@ def _sample_rows(run: Run, run_id: str, artifact_uri: str) -> list[dict[str, Any
             "audio_uri": f"{artifact_uri}/{s.audio_path}" if s.audio_path else None,
             "stages_ms": json.dumps(s.stages_ms),
             "telemetry": json.dumps(s.telemetry),
+            "extras": json.dumps(s.extras),
         }
         for s in run.samples()
     ]

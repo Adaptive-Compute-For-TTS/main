@@ -22,3 +22,9 @@ def test_modal_backend_requires_context_manager() -> None:
     job = Job(model=backend.model, nfe=1, prompts=(), measurement=MeasurementConfig())
     with pytest.raises(RuntimeError, match="context manager"):
         backend.execute(job)
+
+
+def test_modal_backend_builds_patched_executor_image_offline() -> None:
+    backend = BACKENDS.create("modal", model=ComponentSpec(name="dots_tts_executor"))
+    app, fn = backend._build()
+    assert app is not None and fn is not None

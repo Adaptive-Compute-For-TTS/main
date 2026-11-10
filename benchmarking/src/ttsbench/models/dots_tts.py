@@ -16,8 +16,8 @@ from ttsbench.models.base import Requirements, SynthesisOutput, SynthesisRequest
 # Pinned for reproducible images: tag v0.3.1, plus upstream constraints/recommended.txt with
 # gradio bumped 6.17.0 -> 6.17.3 (6.17.0 is no longer on PyPI, so the upstream file can't resolve).
 REVISION = "09235d55005c61867d3b94aeb6e13eede919a0a3"
-_PINS = (
-    f"dots.tts @ git+https://github.com/studio-dots-ai/dots.tts.git@{REVISION}",
+# dots.tts's own dependencies, shared with the dots_tts_executor model.
+DEPENDENCY_PINS = (
     "torch==2.8.0",
     "torchaudio==2.8.0",
     "transformers==4.57.0",
@@ -29,6 +29,7 @@ _PINS = (
     "safetensors==0.8.0rc0",
     "gradio==6.17.3",
 )
+_PINS = (f"dots.tts @ git+https://github.com/studio-dots-ai/dots.tts.git@{REVISION}", *DEPENDENCY_PINS)
 
 
 class DotsTTS(TTSModel):

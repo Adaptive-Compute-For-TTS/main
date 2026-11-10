@@ -58,5 +58,8 @@ create table if not exists samples (
     audio_uri      text,
     stages_ms      jsonb not null,
     telemetry      jsonb not null,
+    extras         jsonb not null default '{}',
     primary key (run_id, prompt_id, nfe, repeat)
 );
+
+alter table samples add column if not exists extras jsonb not null default '{}';

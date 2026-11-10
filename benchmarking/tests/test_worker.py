@@ -70,3 +70,19 @@ def test_missing_reference_audio_fails_loudly(prompts: list[Prompt], tmp_path: P
 def test_payload_entrypoint_is_dict_in_dict_out(prompts: list[Prompt]) -> None:
     out = execute_job_payload(_job(prompts[:1]).model_dump())
     assert isinstance(out, dict) and out["nfe"] == 4 and len(out["samples"]) == 3
+
+
+def test_model_extras_are_stored_on_each_sample(prompts: list[Prompt]) -> None:
+    from ttsbench.models import MODELS
+    from ttsbench.models.sine import SineModel
+
+    class ReportingSine(SineModel):
+        def synthesize(self, request, timer):
+            output = super().synthesize(request, timer)
+            return type(output)(output.audio, output.sample_rate, {"nfe_per_patch": [request.nfe] * 2})
+
+    if "reporting_sine" not in MODELS.names():
+        MODELS.register("reporting_sine", ReportingSine)
+    job = _job(prompts[:1]).model_copy(update={"model": ComponentSpec(name="reporting_sine")})
+    result = execute_job_payload(job.model_dump())
+    assert result["samples"][0]["extras"] == {"nfe_per_patch": [4, 4]}
