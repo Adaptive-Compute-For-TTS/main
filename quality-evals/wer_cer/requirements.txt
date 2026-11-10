@@ -1,0 +1,11 @@
+# Core: transcription and WER/CER scoring (versions used for the published results)
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+jiwer==4.0.0
+whisper-normalizer==0.1.15
+pandas==3.0.6
+numpy==2.4.6
+soundfile==0.14.0
+
+# Tests
+pytest==9.1.1
