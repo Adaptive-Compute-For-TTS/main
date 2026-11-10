@@ -174,6 +174,7 @@ src = Path(__file__).with_name("speaker_sim.py").read_text()
 k = brj.scorer_constants()
 check("flag rules are read from speaker_sim.py itself",
       k["MIN_SECONDS"] == float(re.search(r"^MIN_SECONDS = ([\d.]+)", src, re.M).group(1))
+      and k["MIN_RMS"] == float(re.search(r"^MIN_RMS = (\S+)", src, re.M).group(1))
       and k["MIN_PEAK"] == float(re.search(r"^MIN_PEAK = ([\d.]+)", src, re.M).group(1))
       and re.search(r'^MODEL_REVISION = "(\w+)"', src, re.M).group(1) == k["MODEL_REVISION"])
 

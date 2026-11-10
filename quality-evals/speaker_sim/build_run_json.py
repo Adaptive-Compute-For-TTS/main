@@ -54,9 +54,9 @@ NFE_DEFINITION = "Euler vector-field evaluations per generated audio patch, one 
 
 
 def scorer_constants(path: Path = Path(__file__).with_name("speaker_sim.py")) -> dict:
-    """MODEL_ID, MODEL_REVISION, MIN_SECONDS and MIN_PEAK read from the scorer's source, so the flags
+    """MODEL_ID, MODEL_REVISION, MIN_SECONDS, MIN_PEAK and MIN_RMS read from the scorer's source, so the flags
     use exactly the scorer's own rules (importing it would pull in torch)."""
-    want = {"MODEL_ID", "MODEL_REVISION", "MIN_SECONDS", "MIN_PEAK"}
+    want = {"MODEL_ID", "MODEL_REVISION", "MIN_SECONDS", "MIN_PEAK", "MIN_RMS"}
     out = {}
     for node in ast.parse(path.read_text()).body:
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in want:
@@ -72,8 +72,8 @@ def flag_table(k: dict) -> dict[str, tuple[str, str]]:
         "missing_audio": ("invalid", "The WAV file is not on disk."),
         "unreadable_audio": ("invalid", "The WAV file could not be decoded."),
         "too_short": ("invalid", f"Shorter than {k['MIN_SECONDS']} s: too little audio for a speaker embedding."),
-        "silent": ("invalid", f"(Near-)silent: peak below {k['MIN_PEAK']} (about -40 dBFS) or RMS below 1e-4. "
-                              "A failed generation, not a quiet voice."),
+        "silent": ("invalid", (f"(Near-)silent: peak below {k['MIN_PEAK']} (about -40 dBFS) or RMS below {k['MIN_RMS']:.0e}. "
+                               "A failed generation, not a quiet voice.").replace("e-0", "e-")),
         "asr_rejected": ("invalid", "The ASR step rejected the clip, so its WER and CER are not a real measurement."),
         "score_error": ("invalid", "The SIM scorer failed on this clip."),
         "contaminated_continuation": ("invalid", "Generated in continuation mode: the reference transcript "
@@ -99,7 +99,7 @@ def audio_flags(path: Path, k: dict) -> list[str]:
     mono = data.mean(axis=1)
     if mono.size < sr * k["MIN_SECONDS"]:
         return ["too_short"]
-    if math.sqrt(float(np.mean(mono**2))) < 1e-4 or float(np.abs(mono).max()) < k["MIN_PEAK"]:
+    if math.sqrt(float(np.mean(mono**2))) < k["MIN_RMS"] or float(np.abs(mono).max()) < k["MIN_PEAK"]:
         return ["silent"]
     return []
 
