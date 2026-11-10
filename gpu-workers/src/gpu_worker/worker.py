@@ -4,6 +4,7 @@ One job, following the system diagram:
     fixed-NFE executor (gpu-executor: generate_fixed_nfe, every patch at the run's NFE)
     -> runtime measurements (time, RTF, peak VRAM; telemetry plugs in here)
     -> WAV validation + storage (wav-validation: validate_and_store, check first, then store)
+    -> quality eval (quality-evals: speaker similarity + WER/CER on the stored clip, passed clips only)
     -> JobOutcome, which the queue loop writes to the runs row
 
 run_job never raises for a failed run: any error becomes status "failed" with an error_message,
@@ -14,7 +15,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import torch
@@ -62,20 +65,38 @@ def seed_all(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def build_evaluator(config: WorkerConfig):
+    """The per-run quality evaluator from quality-evals/speaker_sim (models load on its first use).
+
+    Needs quality-evals/speaker_sim/requirements-worker.txt installed on top of gpu-executor's
+    constraints. It lives in the monorepo rather than on PyPI, so its folder goes on sys.path.
+    """
+    folder = Path(__file__).resolve().parents[3] / "quality-evals" / "speaker_sim"
+    if str(folder) not in sys.path:
+        sys.path.insert(0, str(folder))
+    from evaluate_run import QualityEvaluator
+
+    reference = str(config.reference_wav) if config.reference_wav else None
+    return QualityEvaluator(reference_wav=reference)
+
+
 def _failed(message: str, result: Optional[dict] = None) -> JobOutcome:
     return JobOutcome(status="failed", result=result, audio_path=None, error_message=message)
 
 
 class GpuWorker:
-    def __init__(self, runtime, config: WorkerConfig, executor=None) -> None:
+    def __init__(self, runtime, config: WorkerConfig, executor=None, evaluator=None) -> None:
         """Wrap an already loaded runtime. Use GpuWorker.load() to load dots.tts from config.
 
         executor: the adaptive_nfe Executor, built once and reused for every job (None builds one
         per call inside generate_fixed_nfe).
+        evaluator: object with .evaluate(audio_path, prompt, validation=...) -> dict that never raises
+        (quality-evals' QualityEvaluator); None skips quality eval and leaves result["quality"] empty.
         """
         self.rt = runtime
         self.config = config
         self.executor = executor
+        self.evaluator = evaluator
 
     @classmethod
     def load(cls, config: WorkerConfig, *, warmup: bool = True) -> "GpuWorker":
@@ -85,7 +106,7 @@ class GpuWorker:
 
         log.info("loading %s (precision=%s, optimize=%s)", config.model, config.precision, config.optimize)
         rt = DotsTtsRuntime.from_pretrained(config.model, precision=config.precision, optimize=config.optimize)
-        worker = cls(rt, config, Executor(rt.model))
+        worker = cls(rt, config, Executor(rt.model), evaluator=build_evaluator(config))
         if warmup:
             worker.warmup()
         return worker
@@ -137,16 +158,20 @@ class GpuWorker:
         result: dict[str, Any] = dict(
             nfe=job.nfe, nfe_per_patch=gen.nfe_per_patch, num_patches=gen.num_patches,
             executor_used_all_patches=gen.executor_nfe_per_patch == gen.nfe_per_patch,
-            audio_s=round(audio_t.shape[-1] / sr, 4), sample_rate=sr,
-            time_s=round(float(out["time_used"]), 4), rtf=round(float(out["rtf"]), 6),
-            peak_vram_mb=None if peak_vram_mb is None else round(peak_vram_mb, 1),
+            sample_rate=sr,
+            # Runtime numbers (generation only), under "metrics" as agreed with Sai.
+            metrics=dict(
+                audio_s=round(audio_t.shape[-1] / sr, 4),
+                time_s=round(float(out["time_used"]), 4), rtf=round(float(out["rtf"]), 6),
+                peak_vram_mb=None if peak_vram_mb is None else round(peak_vram_mb, 1),
+            ),
             audio_sha256=audio_sha256(audio_t),
             model=c.model, precision=c.precision, optimize=c.optimize, seed=c.seed, ode_method=ode,
             guidance_scale=cfg, speaker_scale=c.speaker_scale,
             gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
             worker_version=__version__,
             telemetry=None,  # runtime telemetry (Niranjan)
-            quality=None,  # quality eval (Arush, Atharv)
+            quality=None,  # filled below once the clip has passed validation
         )
 
         # Check first, then store: the WAV is written only by validate_and_store, to
@@ -156,8 +181,13 @@ class GpuWorker:
                                         max_generate_length=self.rt.max_generate_length)
         result["validation"] = validation
         log.info("run %s nfe=%d: %d patches, %.2fs audio, RTF %.3f, validation %s", job.run_id, job.nfe,
-                 gen.num_patches, result["audio_s"], result["rtf"], "ok" if validation["ok"] else validation["flags"])
+                 gen.num_patches, result["metrics"]["audio_s"], result["metrics"]["rtf"],
+                 "ok" if validation["ok"] else validation["flags"])
         if not validation["ok"]:
             return _failed("WAV failed validation: " + ", ".join(validation["flags"]), result)
+        # Scored here, before the run is marked completed. evaluate() never raises: a scorer that fails
+        # leaves its metric None and an entry in quality["errors"], it does not fail the run.
+        if self.evaluator is not None:
+            result["quality"] = self.evaluator.evaluate(validation["audio_path"], job.prompt, validation=validation)
         return JobOutcome(status="completed", result=result, audio_path=validation["audio_path"],
                           error_message=None)
