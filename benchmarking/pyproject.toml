@@ -1,0 +1,39 @@
+[project]
+name = "ttsbench"
+version = "0.1.0"
+description = "Benchmarking and evaluation harness for TTS inference (dots.tts adaptive compute)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.10",
+    "pyyaml>=6.0",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+modal = ["modal>=1.0"]
+publish = ["boto3>=1.34", "psycopg[binary]>=3.1"]
+
+[project.scripts]
+ttsbench = "ttsbench.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ttsbench"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
