@@ -63,10 +63,22 @@ class FakeRuntime:
                 "rtf": 0.75 / (self.audio.shape[-1] / SR)}
 
 
-def make_worker(tmp_path: Path, **rt_kwargs):
+class FakeEvaluator:
+    """Stands in for quality-evals' QualityEvaluator: records its calls, returns a fixed dict."""
+
+    def __init__(self, quality=None) -> None:
+        self.quality = quality or {"scored": True, "sim_ref": 0.9, "wer": 0.0, "cer": 0.0, "errors": []}
+        self.calls: list[tuple] = []
+
+    def evaluate(self, audio_path, prompt, validation=None):
+        self.calls.append((audio_path, prompt, validation))
+        return self.quality
+
+
+def make_worker(tmp_path: Path, evaluator=None, **rt_kwargs):
     rt, ex = FakeRuntime(**rt_kwargs), FakeExecutor()
     cfg = WorkerConfig(storage_dir=tmp_path / "storage", warmup_nfes=(4, 10))
-    return GpuWorker(rt, cfg, executor=ex), rt, ex
+    return GpuWorker(rt, cfg, executor=ex, evaluator=evaluator), rt, ex
 
 
 def test_completed_run_stores_wav_and_fills_the_row(tmp_path):
@@ -81,7 +93,8 @@ def test_completed_run_stores_wav_and_fills_the_row(tmp_path):
     r = out.result
     assert r["nfe"] == 10 and r["nfe_per_patch"] == [10] * 6 and r["num_patches"] == 6
     assert ex.calls == [10] * 6 and r["executor_used_all_patches"] is True
-    assert r["audio_s"] == 1.5 and r["sample_rate"] == SR and r["time_s"] == 0.75
+    assert r["metrics"]["audio_s"] == 1.5 and r["sample_rate"] == SR and r["metrics"]["time_s"] == 0.75
+    assert set(r["metrics"]) == {"audio_s", "time_s", "rtf", "peak_vram_mb"}
     assert r["validation"]["ok"] is True and r["validation"]["checks"]["num_patches"] == 6
     assert r["validation"]["checks"]["max_generate_length"] == 500
     assert r["telemetry"] is None and r["quality"] is None
@@ -172,3 +185,43 @@ def test_warmup_runs_each_nfe_and_stores_nothing(tmp_path):
     worker.warmup()
     assert [c["num_steps"] for c in rt.calls] == [4, 10]
     assert not (tmp_path / "storage").exists()
+
+
+def test_quality_is_scored_on_the_stored_clip_before_the_run_completes(tmp_path):
+    ev = FakeEvaluator()
+    worker, _, _ = make_worker(tmp_path, evaluator=ev)
+    out = worker.run_job(Job("run-1", "Hello there.", 10))
+
+    assert out.ok and out.result["quality"] == ev.quality
+    (audio_path, prompt, validation), = ev.calls
+    assert audio_path == out.audio_path and Path(audio_path).is_file()  # the stored clip, not a temp file
+    assert prompt == "Hello there." and validation is out.result["validation"]
+    json.dumps(out.result)
+
+
+def test_clips_that_fail_validation_are_not_scored(tmp_path):
+    ev = FakeEvaluator()
+    worker, _, _ = make_worker(tmp_path, evaluator=ev, audio=torch.zeros(1, SR * 2))
+    out = worker.run_job(Job("run-1", "Hello there.", 10))
+    assert out.status == "failed" and ev.calls == [] and out.result["quality"] is None
+
+
+def test_scorer_errors_stay_in_quality_and_do_not_fail_the_run(tmp_path):
+    q = {"scored": False, "sim_ref": None, "wer": None, "cer": None, "errors": ["asr: AudioRejected: silent"]}
+    worker, _, _ = make_worker(tmp_path, evaluator=FakeEvaluator(q))
+    out = worker.run_job(Job("run-1", "Hello there.", 10))
+    assert out.ok and out.result["quality"]["errors"] == ["asr: AudioRejected: silent"]
+
+
+def test_no_evaluator_leaves_quality_empty(tmp_path):
+    worker, _, _ = make_worker(tmp_path)
+    assert worker.run_job(Job("run-1", "Hello there.", 10)).result["quality"] is None
+
+
+def test_build_evaluator_finds_quality_evals_and_passes_the_reference_voice(tmp_path):
+    pytest.importorskip("faster_whisper")  # quality-evals/wer_cer/requirements.txt; models are not loaded
+    from gpu_worker.worker import build_evaluator
+
+    ev = build_evaluator(WorkerConfig(reference_wav=tmp_path / "abhi1.wav"))
+    assert type(ev).__name__ == "QualityEvaluator" and ev.reference_wav == str(tmp_path / "abhi1.wav")
+    assert build_evaluator(WorkerConfig()).reference_wav is None
