@@ -284,8 +284,8 @@ xvector_4090,all,4,32,wer_heard,54,-7.4e-05,-0.009209,0.010024,False
 xvector_4090,all,4,32,latency_ms,54,-24177.668519,-27829.188102,-20584.876806,True
 xvector_4090,all,4,32,rtf,54,-3.282797,-3.351265,-3.214915,True
 xvector_4090,all,6,32,sim_ref,54,-0.007719,-0.013511,-0.001868,True
-xvector_4090,all,6,32,wer,54,0.026107,0.004777,0.049767,True
-xvector_4090,all,6,32,wer_heard,54,0.008519,-0.005939,0.027854,False
+xvector_4090,all,6,32,wer,54,0.021315,0.001128,0.043826,True
+xvector_4090,all,6,32,wer_heard,54,0.00743,-0.006467,0.026602,False
 xvector_4090,all,6,32,latency_ms,54,-22405.522222,-25790.302407,-19056.413472,True
 xvector_4090,all,6,32,rtf,54,-3.045152,-3.119679,-2.968646,True
 xvector_4090,all,8,32,sim_ref,54,-0.006324,-0.012296,-0.000492,True
@@ -404,8 +404,8 @@ xvector_4090,numbers,4,32,wer_heard,9,0.004833,0.0,0.0145,False
 xvector_4090,numbers,4,32,latency_ms,9,-24783.177778,-32974.211111,-16705.2775,True
 xvector_4090,numbers,4,32,rtf,9,-3.114816,-3.149998,-3.082531,True
 xvector_4090,numbers,6,32,sim_ref,9,-0.015444,-0.032811,-0.0,True
-xvector_4090,numbers,6,32,wer,9,0.053422,-0.015889,0.119178,False
-xvector_4090,numbers,6,32,wer_heard,9,0.018911,0.0,0.045044,False
+xvector_4090,numbers,6,32,wer,9,0.024667,-0.031756,0.078811,False
+xvector_4090,numbers,6,32,wer_heard,9,0.012378,0.0,0.0306,False
 xvector_4090,numbers,6,32,latency_ms,9,-23088.177778,-30739.057778,-15515.480833,True
 xvector_4090,numbers,6,32,rtf,9,-2.885328,-2.91821,-2.854218,True
 xvector_4090,numbers,8,32,sim_ref,9,-0.007944,-0.029412,0.011267,False
