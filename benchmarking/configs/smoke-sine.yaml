@@ -1,0 +1,11 @@
+# Pipeline smoke test: CPU stand-in model, runs anywhere in a few seconds.
+name: smoke-sine
+model:
+  name: sine
+backend:
+  name: local
+sweep:
+  nfe: [4, 8, 16]
+measurement:
+  warmup: 2
+  repeats: 5

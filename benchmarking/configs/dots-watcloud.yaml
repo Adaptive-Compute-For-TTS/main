@@ -1,0 +1,21 @@
+# Example: dots.tts at one fixed NFE on WATcloud (SLURM). Needs `ssh wato-login1` to work non-interactively.
+name: dots-watcloud
+model:
+  name: dots_tts
+  params:
+    checkpoint: dots-studio/dots.tts-soar
+    precision: bfloat16
+    guidance_scale: 1.2
+backend:
+  name: watcloud
+  params:
+    gres: gpu:1          # whole GPU for clean latency; e.g. gpu:rtx_3090:1 to pin the type
+    time_limit: "02:00:00"
+    # hf_home: /path/with/space/for/the/9GB/checkpoint
+sweep:
+  nfe: [16]
+measurement:
+  warmup: 3
+  repeats: 5
+  seed: 0
+  save_audio: first

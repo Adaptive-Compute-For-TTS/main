@@ -1,0 +1,24 @@
+# dots.tts through gpu-executor's fixed-NFE executor on a Modal H100.
+# Baseline on the same build:   --set model.params.mode=stock
+# dots.tts's own loop, NFE frozen: --set model.params.mode=scheduler
+# Fast path:                    --set model.params.optimize=true   (compiles in warmup, ~minutes)
+name: executor-modal
+model:
+  name: dots_tts_executor
+  params:
+    mode: executor
+    optimize: false
+    checkpoint: dots-studio/dots.tts-soar
+    precision: bfloat16
+    guidance_scale: 1.2
+backend:
+  name: modal
+  params:
+    gpu: H100
+sweep:
+  nfe: [4, 10, 32]
+measurement:
+  warmup: 2
+  repeats: 3
+  seed: 42
+  save_audio: first
