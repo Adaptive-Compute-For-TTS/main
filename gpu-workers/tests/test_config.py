@@ -29,3 +29,9 @@ def test_empty_warmup_list_means_no_warmup():
 def test_bad_boolean_is_an_error():
     with pytest.raises(ValueError):
         WorkerConfig.from_env({"GPU_WORKER_OPTIMIZE": "maybe"})
+
+
+def test_reference_wav_is_optional():
+    assert WorkerConfig.from_env({}).reference_wav is None
+    assert WorkerConfig.from_env({"GPU_WORKER_REFERENCE_WAV": ""}).reference_wav is None
+    assert WorkerConfig.from_env({"GPU_WORKER_REFERENCE_WAV": "/data/abhi1.wav"}).reference_wav == Path("/data/abhi1.wav")
