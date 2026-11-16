@@ -43,6 +43,25 @@ def list_runs(
     return list(database.scalars(statement).all())
 
 
+def recover_pending_runs(database: Session) -> List[str]:
+    """Restore pending work; interrupted processing must never look successful."""
+    interrupted = database.scalars(
+        select(Run).where(Run.status == RunStatus.RUNNING)
+    ).all()
+    for run in interrupted:
+        run.status = RunStatus.FAILED
+        run.error_message = "Processing was interrupted by a backend restart. Submit a new run to retry."
+        run.completed_at = utc_now()
+    database.commit()
+
+    statement = (
+        select(Run.id)
+        .where(Run.status == RunStatus.QUEUED)
+        .order_by(Run.created_at.asc(), Run.id.asc())
+    )
+    return list(database.scalars(statement).all())
+
+
 def mark_run_running(database: Session, run_id: str) -> Optional[Run]:
     run = get_run(database, run_id)
     if run is None or run.status != RunStatus.QUEUED:
@@ -79,6 +98,7 @@ def mark_run_failed(
     database: Session,
     run_id: str,
     error_message: str,
+    result: Optional[Dict[str, Any]] = None,
 ) -> Optional[Run]:
     run = get_run(database, run_id)
     if run is None or run.status not in {
@@ -89,6 +109,8 @@ def mark_run_failed(
 
     run.status = RunStatus.FAILED
     run.error_message = error_message
+    if result is not None:
+        run.result = result
     run.completed_at = utc_now()
     database.commit()
     database.refresh(run)

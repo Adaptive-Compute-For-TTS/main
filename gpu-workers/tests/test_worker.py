@@ -172,3 +172,45 @@ def test_warmup_runs_each_nfe_and_stores_nothing(tmp_path):
     worker.warmup()
     assert [c["num_steps"] for c in rt.calls] == [4, 10]
     assert not (tmp_path / "storage").exists()
+
+
+def test_diagnostics_wrap_generation_then_score_the_validated_wav(tmp_path):
+    worker, rt, _ = make_worker(tmp_path)
+    events = []
+    class Telemetry:
+        def measure(self, generate, nfe):
+            events.append("start")
+            value = generate()
+            events.append("stop")
+            return value, {"timing":{"steps":nfe}}
+    def quality(path, prompt, validation):
+        assert Path(path).is_file() and validation['ok']
+        assert events == ["start", "stop"]
+        events.append("quality")
+        return {"scored":True,"wer":0.25,"cer":0.1}
+    worker.telemetry, worker.quality = Telemetry(), quality
+    out = worker.run_job(Job("measured", "Hello there.", 4))
+    assert out.ok and len(rt.calls) == 1
+    assert out.result['quality']['wer'] == 0.25
+    assert out.result['telemetry']['timing']['steps'] == 4
+    assert events == ['start','stop','quality']
+
+
+def test_quality_failure_keeps_completed_audio_and_validation(tmp_path):
+    worker, _, _ = make_worker(tmp_path)
+    def quality(*args):
+        raise RuntimeError("ASR unavailable")
+    worker.quality = quality
+    out = worker.run_job(Job("quality-failure", "Hello there.", 4))
+    assert out.ok and Path(out.audio_path).is_file() and out.result['validation']['ok']
+    assert out.result['quality']['status'] == 'unavailable'
+    assert 'ASR unavailable' in out.result['quality']['errors'][0]
+
+
+def test_invalid_audio_is_never_sent_to_quality_evaluator(tmp_path):
+    worker, _, _ = make_worker(tmp_path, audio=torch.zeros(1,SR))
+    calls=[]
+    worker.quality = lambda *args: calls.append(args)
+    out=worker.run_job(Job('invalid-audio','Hello there.',4))
+    assert not out.ok and not calls
+    assert out.result['quality']['status'] == 'skipped'

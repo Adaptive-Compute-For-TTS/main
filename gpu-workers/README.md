@@ -4,7 +4,7 @@ The long-running process on the GPU machine that turns queued runs into WAVs. Th
 
 Owners: Tony, Nick Kim, Eric.
 
-Status: the worker core (`src/gpu_worker/`) runs one job end to end: generate, validate, store, build the row. Not yet connected to the queue; the backend still uses its placeholder worker (`backend/app/workers/local_worker.py`).
+Status: FastAPI's real consumer calls this worker through `backend/app/workers/gpu_processor.py`. It attaches generation telemetry and per-run quality evaluation, then persists the result and validated audio path to SQLite. The core also remains usable independently with optional telemetry/quality adapters.
 
 ## Flow
 
@@ -68,7 +68,7 @@ In, from the `runs` table: `id`, `prompt`, `nfe` (4-32).
 
 Out, written to the same row:
 - `audio_path`: `<storage>/<run_id>/audio.wav`, from `validate_and_store` (only for clips that passed)
-- `result` (JSON): `nfe`, `nfe_per_patch`, `num_patches`, `executor_used_all_patches`, `audio_s`, `sample_rate`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, the settings (`model`, `precision`, `optimize`, `seed`, `ode_method`, `guidance_scale`, `speaker_scale`), `gpu`, `worker_version`, plus `validation` (what `validate_and_store` returns), and `telemetry` and `quality` (empty for now). Also kept for failed validations, for debugging.
+- `result` (JSON): `nfe`, `nfe_per_patch`, `num_patches`, `executor_used_all_patches`, `audio_s`, `sample_rate`, `time_s`, `rtf`, `peak_vram_mb`, `audio_sha256`, the settings (`model`, `precision`, `optimize`, `seed`, `ode_method`, `guidance_scale`, `speaker_scale`), `gpu`, `worker_version`, plus `validation` (what `validate_and_store` returns), and `telemetry` and `quality` (populated by the FastAPI adapters). Failed validations retain measurements for debugging and skip quality scoring.
 - on error: `status=failed`, `error_message` (out of GPU memory, NFE check failed, WAV failed validation with its flags, ...)
 
 ## Open questions
@@ -77,7 +77,7 @@ Out, written to the same row:
 - Eager or optimized path for the demo (optimized is ~2x faster but compiles ~3 min at startup)
 - Model (soar or base) and where WAVs are stored (`storage_dir` is shared by wav-validation and Sai's storage)
 - Retrying a run: `validate_and_store` refuses to store the same `run_id` twice, even after a failed validation, so a retry needs a new run id or a backend rule
-- Does quality eval run inside the worker, or afterwards on stored clips?
+- Quality evaluation runs inside the FastAPI queue consumer, after validation/storage, while the run remains `running`. It uses the existing team evaluator; scorer failures do not fail successful audio. See [diagnostics setup](../docs/generation-pipeline.md#per-run-diagnostics).
 
 ## Plan
 

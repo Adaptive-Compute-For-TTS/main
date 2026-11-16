@@ -67,15 +67,20 @@ def _failed(message: str, result: Optional[dict] = None) -> JobOutcome:
 
 
 class GpuWorker:
-    def __init__(self, runtime, config: WorkerConfig, executor=None) -> None:
+    def __init__(self, runtime, config: WorkerConfig, executor=None, *, telemetry=None, quality=None) -> None:
         """Wrap an already loaded runtime. Use GpuWorker.load() to load dots.tts from config.
 
         executor: the adaptive_nfe Executor, built once and reused for every job (None builds one
         per call inside generate_fixed_nfe).
+        telemetry: optional adapter with measure(generate, nfe) -> (generation, JSON metrics).
+        quality: optional callable(audio_path, prompt, validation) -> JSON metrics.
+        FastAPI attaches the team adapters; standalone callers may omit them.
         """
         self.rt = runtime
         self.config = config
         self.executor = executor
+        self.telemetry = telemetry
+        self.quality = quality
 
     @classmethod
     def load(cls, config: WorkerConfig, *, warmup: bool = True) -> "GpuWorker":
@@ -129,7 +134,11 @@ class GpuWorker:
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
         # Raises if any patch missed the NFE or skipped the executor.
-        gen, ode, cfg = self._generate(job.prompt, job.nfe)
+        if self.telemetry is not None:
+            (gen, ode, cfg), telemetry = self.telemetry.measure(lambda: self._generate(job.prompt, job.nfe), job.nfe)
+        else:
+            gen, ode, cfg = self._generate(job.prompt, job.nfe)
+            telemetry = None
         out = gen.output
         peak_vram_mb = torch.cuda.max_memory_allocated() / 2**20 if torch.cuda.is_available() else None
         audio_t, sr = out["audio"], int(out["sample_rate"])
@@ -145,8 +154,8 @@ class GpuWorker:
             guidance_scale=cfg, speaker_scale=c.speaker_scale,
             gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
             worker_version=__version__,
-            telemetry=None,  # runtime telemetry (Niranjan)
-            quality=None,  # quality eval (Arush, Atharv)
+            telemetry=telemetry,
+            quality=None,
         )
 
         # Check first, then store: the WAV is written only by validate_and_store, to
@@ -158,6 +167,15 @@ class GpuWorker:
         log.info("run %s nfe=%d: %d patches, %.2fs audio, RTF %.3f, validation %s", job.run_id, job.nfe,
                  gen.num_patches, result["audio_s"], result["rtf"], "ok" if validation["ok"] else validation["flags"])
         if not validation["ok"]:
+            result["quality"] = {"status": "skipped", "scored": False,
+                                 "notes": ["Quality evaluation skipped because WAV validation failed."], "errors": []}
             return _failed("WAV failed validation: " + ", ".join(validation["flags"]), result)
+        if self.quality is not None:
+            try:
+                result["quality"] = self.quality(validation["audio_path"], job.prompt, validation)
+            except Exception as error:
+                # Optional diagnostics must not discard a successfully generated WAV.
+                result["quality"] = {"status": "unavailable", "scored": False,
+                                     "errors": [f"{type(error).__name__}: {error}"]}
         return JobOutcome(status="completed", result=result, audio_path=validation["audio_path"],
                           error_message=None)

@@ -25,3 +25,9 @@ CORS_ORIGINS = [
 PROCESSING_DELAY_SECONDS = float(
     os.getenv("ADAPTIVE_TTS_PROCESSING_DELAY_SECONDS", "0.05")
 )
+
+# Safe inspection default; gpu mode enables the real generation consumer.
+WORKER_MODE = os.getenv("ADAPTIVE_TTS_WORKER_MODE", "queue-only").strip().lower()
+
+# The audio endpoint serves only validated files beneath this directory.
+AUDIO_DIR = Path(os.getenv("ADAPTIVE_TTS_AUDIO_DIR", str(DATA_DIR / "audio"))).resolve()

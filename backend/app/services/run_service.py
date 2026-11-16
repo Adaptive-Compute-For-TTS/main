@@ -5,13 +5,11 @@ from sqlalchemy.orm import Session
 from backend.app import repository
 from backend.app.models import Run
 from backend.app.schemas import RunCreate
-from backend.app.workers.local_worker import local_worker
+from backend.app.workers.local_worker import LocalWorker
 
 
-def submit_run(database: Session, run_data: RunCreate) -> Run:
-    run = repository.create_run(database, run_data)
-    local_worker.submit(run.id)
-    return run
+def submit_run(database: Session, run_data: RunCreate, worker: LocalWorker) -> Run:
+    return worker.create_and_submit(database, run_data)
 
 
 def get_run(database: Session, run_id: str) -> Optional[Run]:
