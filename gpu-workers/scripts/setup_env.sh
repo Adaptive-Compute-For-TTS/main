@@ -14,5 +14,7 @@ ROOT="$(dirname "$HERE")"                  # monorepo root
 (cd "$ROOT/gpu-executor" && bash scripts/setup_env.sh "${1:-cuda}")
 PY="$ROOT/gpu-executor/.venv/bin/python"
 $PY -m pip install -e "$ROOT/wav-validation" -e "$HERE[test]"
+$PY -m pip install -r "$ROOT/quality-evals/speaker_sim/requirements-worker.txt" nvidia-ml-py \
+  -c "$ROOT/gpu-executor/constraints.txt"
 $PY -c "import gpu_worker, wav_validation, adaptive_nfe; print('gpu_worker', gpu_worker.__version__, '| wav_validation', wav_validation.__version__)"
 echo "Activate with: source $ROOT/gpu-executor/.venv/bin/activate"
