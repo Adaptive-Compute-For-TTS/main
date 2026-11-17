@@ -1,0 +1,150 @@
+# CPU tests for each component. A job runs only when its folder (or this file) changes;
+# otherwise it is skipped, which GitHub counts as passing.
+# GPU tests (gpu-executor/tests/test_fixed_nfe_gpu.py) skip themselves here: no CUDA, no dots.tts.
+
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      wav-validation: ${{ steps.filter.outputs.wav-validation }}
+      backend: ${{ steps.filter.outputs.backend }}
+      gpu-executor: ${{ steps.filter.outputs.gpu-executor }}
+      quality-evals: ${{ steps.filter.outputs.quality-evals }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          # Each job runs only when a file matching its filter changes. If your component imports
+          # or reads files from another folder, add that folder to your filter in the same PR.
+          filters: |
+            workflow: &workflow
+              - .github/workflows/tests.yml
+            wav-validation:
+              - *workflow
+              - wav-validation/**
+              # test_thresholds.py checks wav-validation's limits against this file
+              - quality-evals/speaker_sim/speaker_sim.py
+            backend:
+              - *workflow
+              - backend/**
+            gpu-executor:
+              - *workflow
+              - gpu-executor/**
+            quality-evals:
+              - *workflow
+              - quality-evals/**
+
+  wav-validation:
+    needs: changes
+    if: needs.changes.outputs.wav-validation == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # oldest and newest the package claims to support.
+        # setup-python has no 3.9 build for ubuntu-latest (26.04), so 3.9 runs on 24.04.
+        include:
+          - python: "3.9"
+            os: ubuntu-24.04
+          - python: "3.13"
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: wav-validation/pyproject.toml
+      - run: pip install -e 'wav-validation[test]'
+      - run: pytest wav-validation/tests
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      # run from the repo root: the tests import `backend.app`
+      - run: python -m pytest backend/tests
+
+  # Checks that need no model or torch (the SIM scorer is only imported when scoring real clips).
+  quality-evals:
+    needs: changes
+    if: needs.changes.outputs.quality-evals == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/tests.yml
+      - run: pip install numpy matplotlib soundfile pytest
+      - run: python quality-evals/speaker_sim/pipeline_check.py
+      # TODO after #8 merges: pytest quality-evals/speaker_sim/test_evaluate_run.py
+
+  gpu-executor:
+    needs: changes
+    if: needs.changes.outputs.gpu-executor == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gpu-executor/constraints.txt
+      # CPU torch only; without dots.tts, test_executor.py and test_fixed_nfe_gpu.py skip themselves
+      - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e gpu-executor torchdiffeq pytest
+      - run: pytest gpu-executor/tests
+
+  # Same tests against real dots.tts (pinned commit + our hook patch), installed by the README's
+  # setup script. test_executor.py runs a tiny random DiT on CPU, so no weights are downloaded.
+  gpu-executor-dots-tts:
+    needs: changes
+    if: needs.changes.outputs.gpu-executor == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DOTS_TTS_COMMIT: 3cb6f94a571097b500038f1619959075282c5c98  # keep in sync with gpu-executor/README.md
+      DOTS_TTS_DIR: ${{ github.workspace }}/../dots.tts
+    defaults:
+      run:
+        working-directory: gpu-executor
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gpu-executor/constraints.txt
+      - name: Clone dots.tts and apply the hook patch
+        run: |
+          git init -q "$DOTS_TTS_DIR"
+          git -C "$DOTS_TTS_DIR" fetch -q --depth 1 https://github.com/studio-dots-ai/dots.tts.git "$DOTS_TTS_COMMIT"
+          git -C "$DOTS_TTS_DIR" checkout -q FETCH_HEAD
+          git -C "$DOTS_TTS_DIR" apply "$PWD/patches/dots_tts_scheduler_hook.patch"
+      - run: bash scripts/setup_env.sh cpu
+      - run: .venv/bin/pytest -rs tests
