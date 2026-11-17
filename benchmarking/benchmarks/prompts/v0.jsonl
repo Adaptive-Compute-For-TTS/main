@@ -1,0 +1,9 @@
+# v0 PLACEHOLDER so the harness runs. The canonical benchmark prompt set will be added as v1.jsonl.
+{"id": "s01-greeting", "text": "Hello, and welcome to the demo.", "length": "short", "tags": ["plain"]}
+{"id": "s02-question", "text": "Can you hear me clearly right now?", "length": "short", "tags": ["question"]}
+{"id": "s03-numbers", "text": "Call 555-0147 before 9:30 a.m.", "length": "short", "tags": ["numbers", "abbreviations"]}
+{"id": "m01-narrative", "text": "The train left the station a few minutes late, but by the time it reached the coast the sun had already started to set over the water.", "length": "medium", "tags": ["plain", "narrative"]}
+{"id": "m02-instructions", "text": "First, preheat the oven to 220 degrees. Then, while it warms up, slice the vegetables and toss them with olive oil, salt, and pepper.", "length": "medium", "tags": ["numbers", "list"]}
+{"id": "m03-names", "text": "Dr. Okonkwo and Ms. Nakamura presented their findings in Zürich on Tuesday, March 4th.", "length": "medium", "tags": ["names", "abbreviations", "dates"]}
+{"id": "l01-explainer", "text": "Adaptive compute lets a model spend more effort on difficult inputs and less on easy ones. For speech synthesis, that might mean running fewer sampling steps for a short, simple sentence, while reserving the full budget for long passages with unusual names, numbers, or emotional delivery. The challenge is deciding how much compute to spend before you know how hard the input really is.", "length": "long", "tags": ["plain", "technical"]}
+{"id": "l02-dialogue", "text": "\"Are you sure this is the right road?\" she asked, glancing at the map. \"Absolutely,\" he replied, though he did not sound sure at all. They drove on in silence for another twenty minutes, past empty fields and a single shuttered gas station, until the road finally curved toward the lights of the town.", "length": "long", "tags": ["dialogue", "narrative", "punctuation"]}

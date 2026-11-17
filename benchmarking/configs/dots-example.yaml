@@ -1,0 +1,19 @@
+# Example: dots.tts at one fixed NFE on Modal. Copy and adjust for real experiments.
+name: dots-example
+model:
+  name: dots_tts
+  params:
+    checkpoint: dots-studio/dots.tts-soar
+    precision: bfloat16
+    guidance_scale: 1.2
+backend:
+  name: modal
+  params:
+    gpu: H100
+sweep:
+  nfe: [16]
+measurement:
+  warmup: 3
+  repeats: 5
+  seed: 0
+  save_audio: first
