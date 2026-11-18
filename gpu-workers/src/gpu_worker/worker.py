@@ -1,7 +1,9 @@
 """Load dots.tts once, then turn each job into a validated, stored WAV and the run's result.
 
 One job, following the system diagram:
-    fixed-NFE executor (gpu-executor: generate_fixed_nfe, every patch at the run's NFE)
+    NFE adapter: the job's NFE (mode "fixed"), or the predictor's budget (mode "adaptive",
+        nfe-adapter/predictor: predict_budget, once per request, before generation)
+    -> fixed-NFE executor (gpu-executor: generate_fixed_nfe, every patch at the run's NFE)
     -> runtime measurements (time, RTF, peak VRAM; telemetry plugs in here)
     -> WAV validation + storage (wav-validation: validate_and_store, check first, then store)
     -> JobOutcome, which the queue loop writes to the runs row
@@ -27,13 +29,21 @@ from gpu_worker.config import WorkerConfig
 log = logging.getLogger(__name__)
 
 
+MODES = ("fixed", "adaptive")
+
+
 @dataclass(frozen=True)
 class Job:
-    """One run from the queue: the backend's runs.id, runs.prompt, runs.nfe."""
+    """One run from the queue: the backend's runs.id, runs.prompt, runs.nfe.
+
+    mode "fixed": run at nfe. mode "adaptive": the worker's predictor picks the NFE from the text
+    (nfe is ignored and may be None).
+    """
 
     run_id: str
     prompt: str
-    nfe: int
+    nfe: Optional[int] = None
+    mode: str = "fixed"
 
 
 @dataclass
@@ -67,13 +77,15 @@ def _failed(message: str, result: Optional[dict] = None) -> JobOutcome:
 
 
 class GpuWorker:
-    def __init__(self, runtime, config: WorkerConfig, executor=None, *, telemetry=None, quality=None) -> None:
+    def __init__(self, runtime, config: WorkerConfig, executor=None, *, telemetry=None, quality=None,
+                 predictor=None) -> None:
         """Wrap an already loaded runtime. Use GpuWorker.load() to load dots.tts from config.
 
         executor: the adaptive_nfe Executor, built once and reused for every job (None builds one
         per call inside generate_fixed_nfe).
         telemetry: optional adapter with measure(generate, nfe) -> (generation, JSON metrics).
         quality: optional callable(audio_path, prompt, validation) -> JSON metrics.
+        predictor: optional nfe_predictor predictor (predict_budget, budgets) for mode "adaptive".
         FastAPI attaches the team adapters; standalone callers may omit them.
         """
         self.rt = runtime
@@ -81,16 +93,25 @@ class GpuWorker:
         self.executor = executor
         self.telemetry = telemetry
         self.quality = quality
+        self.predictor = predictor
 
     @classmethod
     def load(cls, config: WorkerConfig, *, warmup: bool = True) -> "GpuWorker":
-        """Load dots.tts and the executor once, then warm up (slow; do this at worker start)."""
+        """Load dots.tts, the executor and (if configured) the predictor once, then warm up
+        (slow; do this at worker start). A predictor bundle that fails to load doesn't stop the
+        worker: adaptive jobs then run at predictor_fallback_nfe, with fallback_reason
+        "predictor_unavailable"."""
         from adaptive_nfe.executor import Executor
         from dots_tts.runtime import DotsTtsRuntime
 
+        predictor = None
+        if config.predictor_bundle is not None:
+            from nfe_predictor import load_predictor
+
+            predictor = load_predictor(config.predictor_bundle, fallback_nfe=config.predictor_fallback_nfe)
         log.info("loading %s (precision=%s, optimize=%s)", config.model, config.precision, config.optimize)
         rt = DotsTtsRuntime.from_pretrained(config.model, precision=config.precision, optimize=config.optimize)
-        worker = cls(rt, config, Executor(rt.model))
+        worker = cls(rt, config, Executor(rt.model), predictor=predictor)
         if warmup:
             worker.warmup()
         return worker
@@ -106,10 +127,18 @@ class GpuWorker:
                                     speaker_scale=c.speaker_scale)
         return result, ode, cfg
 
+    def warmup_nfes(self) -> tuple[int, ...]:
+        """The configured warmup NFEs plus every budget the predictor can pick, so an adaptive run never
+        pays first-run setup at a new NFE (with optimize=True: KV cache and CUDA graph setup)."""
+        nfes = set(self.config.warmup_nfes)
+        if self.predictor is not None:
+            nfes.update(self.predictor.budgets)
+        return tuple(sorted(nfes))
+
     def warmup(self) -> None:
-        """One discarded run per configured NFE (setup cost, and with optimize=True the first run at a
+        """One discarded run per warmup NFE (setup cost, and with optimize=True the first run at a
         new NFE rebuilds the KV cache). Nothing is stored."""
-        for nfe in self.config.warmup_nfes:
+        for nfe in self.warmup_nfes():
             log.info("warmup nfe=%d (discarded)", nfe)
             self._generate(self.config.warmup_text, nfe)
 
@@ -126,25 +155,37 @@ class GpuWorker:
 
     def _run_job(self, job: Job) -> JobOutcome:
         c = self.config
-        if isinstance(job.nfe, bool) or not isinstance(job.nfe, int) or job.nfe < 1:
-            return _failed(f"invalid nfe: {job.nfe!r}")
+        if job.mode not in MODES:
+            return _failed(f"invalid mode: {job.mode!r} (expected one of {MODES})")
         if not job.prompt or not job.prompt.strip():
             return _failed("empty prompt")
+        decision = None
+        if job.mode == "adaptive":
+            if self.predictor is None:
+                return _failed("adaptive mode needs a predictor (set GPU_WORKER_PREDICTOR_BUNDLE)")
+            # Never raises: problems come back as the fallback NFE with a fallback_reason.
+            decision = self.predictor.predict_budget({"text": job.prompt}).as_dict()
+            nfe = decision["nfe"]
+        else:
+            nfe = job.nfe
+        if isinstance(nfe, bool) or not isinstance(nfe, int) or nfe < 1:
+            return _failed(f"invalid nfe: {nfe!r}")
 
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
         # Raises if any patch missed the NFE or skipped the executor.
         if self.telemetry is not None:
-            (gen, ode, cfg), telemetry = self.telemetry.measure(lambda: self._generate(job.prompt, job.nfe), job.nfe)
+            (gen, ode, cfg), telemetry = self.telemetry.measure(lambda: self._generate(job.prompt, nfe), nfe)
         else:
-            gen, ode, cfg = self._generate(job.prompt, job.nfe)
+            gen, ode, cfg = self._generate(job.prompt, nfe)
             telemetry = None
         out = gen.output
         peak_vram_mb = torch.cuda.max_memory_allocated() / 2**20 if torch.cuda.is_available() else None
         audio_t, sr = out["audio"], int(out["sample_rate"])
 
         result: dict[str, Any] = dict(
-            nfe=job.nfe, nfe_per_patch=gen.nfe_per_patch, num_patches=gen.num_patches,
+            mode=job.mode, budget_decision=decision,  # decision: predict_budget's output, adaptive only
+            nfe=nfe, nfe_per_patch=gen.nfe_per_patch, num_patches=gen.num_patches,
             executor_used_all_patches=gen.executor_nfe_per_patch == gen.nfe_per_patch,
             audio_s=round(audio_t.shape[-1] / sr, 4), sample_rate=sr,
             time_s=round(float(out["time_used"]), 4), rtf=round(float(out["rtf"]), 6),
@@ -164,7 +205,7 @@ class GpuWorker:
         validation = validate_and_store(audio, sr, job.run_id, c.storage_dir, num_patches=gen.num_patches,
                                         max_generate_length=self.rt.max_generate_length)
         result["validation"] = validation
-        log.info("run %s nfe=%d: %d patches, %.2fs audio, RTF %.3f, validation %s", job.run_id, job.nfe,
+        log.info("run %s nfe=%d: %d patches, %.2fs audio, RTF %.3f, validation %s", job.run_id, nfe,
                  gen.num_patches, result["audio_s"], result["rtf"], "ok" if validation["ok"] else validation["flags"])
         if not validation["ok"]:
             result["quality"] = {"status": "skipped", "scored": False,

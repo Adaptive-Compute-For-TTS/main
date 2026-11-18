@@ -29,3 +29,11 @@ def test_empty_warmup_list_means_no_warmup():
 def test_bad_boolean_is_an_error():
     with pytest.raises(ValueError):
         WorkerConfig.from_env({"GPU_WORKER_OPTIMIZE": "maybe"})
+
+
+def test_predictor_settings():
+    assert WorkerConfig.from_env({}).predictor_bundle is None
+    c = WorkerConfig.from_env({"GPU_WORKER_PREDICTOR_BUNDLE": "/models/predictor-v1",
+                               "GPU_WORKER_PREDICTOR_FALLBACK_NFE": "16"})
+    assert c.predictor_bundle == Path("/models/predictor-v1") and c.predictor_fallback_nfe == 16
+    assert WorkerConfig.from_env({"GPU_WORKER_PREDICTOR_BUNDLE": ""}).predictor_bundle is None

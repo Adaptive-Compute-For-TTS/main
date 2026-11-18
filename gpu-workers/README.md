@@ -44,6 +44,24 @@ outcome = worker.run_job(Job(run.id, run.prompt, run.nfe))   # per claimed run; 
 
 Settings (model, `optimize`, seed, storage folder, warmup NFEs, ...) come from `GPU_WORKER_*` environment variables; see `src/gpu_worker/config.py`. Defaults match `gpu-executor/scripts/generate.py`: soar, bf16, eager, seed 42, guidance 1.2, speaker scale 1.5. Every run is seeded the same, so the same prompt and NFE give the same audio.
 
+## Adaptive mode (draft)
+
+`Job(run_id, prompt, nfe=None, mode="adaptive")`: instead of the request's NFE, the worker asks the
+predictor (`nfe-adapter/predictor`, `predict_budget`) once, before generation. It then runs the whole
+request at that NFE through the same executor, on the eager or optimized path. `mode="fixed"` (the
+default) is unchanged.
+
+- Turn it on with `GPU_WORKER_PREDICTOR_BUNDLE=/path/to/bundle`. `GPU_WORKER_PREDICTOR_FALLBACK_NFE`
+  (default 32) is used if the bundle can't load.
+- Warmup adds every budget the predictor can pick. With `optimize=True`, every possible NFE has its
+  KV cache and CUDA graph setup done at startup instead of on a user's request.
+- `result` gains `mode` and `budget_decision`: `predict_budget`'s output, with the chosen NFE,
+  probabilities, model and policy version, bundle hash, `decision_ms` and `fallback_reason`. Fixed runs
+  record `budget_decision: null`.
+- A predictor problem never fails a run. It runs at the fallback NFE, with `fallback_reason` saying why.
+- Not wired into the API yet. The backend needs a `mode` on requests and runs (Sai): pass it as
+  `Job(..., mode=run.mode)`.
+
 ## Setup and checks
 
 Needs the gpu-executor setup (dots.tts clone with the hook patch next to the monorepo, see `gpu-executor/README.md`). The worker shares gpu-executor's venv, so it runs exactly the executor code gpu-executor's checks test.
@@ -53,6 +71,8 @@ bash gpu-workers/scripts/setup_env.sh && source gpu-executor/.venv/bin/activate
 cd gpu-workers
 pytest tests/                                                    # fake runtime: no weights, no GPU
 python scripts/run_one.py --prompt "Hello there." --nfe 10       # real model on this GPU, prints the row
+python -m nfe_predictor.testing /tmp/predictor-dummy             # dummy predictor bundle (not trained)
+GPU_WORKER_PREDICTOR_BUNDLE=/tmp/predictor-dummy python scripts/run_one.py --prompt "Hello there." --adaptive
 ```
 
 ## Folders

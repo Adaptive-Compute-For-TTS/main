@@ -7,6 +7,8 @@ Settings come from GPU_WORKER_* environment variables (see src/gpu_worker/config
     python scripts/run_one.py --prompt "Hello there." --nfe 10
     GPU_WORKER_MODEL=dots-studio/dots.tts-base python scripts/run_one.py --prompt "Hello there." --nfe 4
     GPU_WORKER_OPTIMIZE=1 python scripts/run_one.py --prompt "Hello there." --nfe 10   # ~3 min compile
+    # adaptive: the predictor picks the NFE (dummy bundle: python -m nfe_predictor.testing /tmp/predictor-dummy)
+    GPU_WORKER_PREDICTOR_BUNDLE=/tmp/predictor-dummy python scripts/run_one.py --prompt "Hello there." --adaptive
 """
 
 from __future__ import annotations
@@ -24,7 +26,10 @@ from gpu_worker import GpuWorker, Job, WorkerConfig
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--prompt", required=True)
-    p.add_argument("--nfe", type=int, required=True)
+    nfe = p.add_mutually_exclusive_group(required=True)
+    nfe.add_argument("--nfe", type=int, help="fixed mode: run at this NFE")
+    nfe.add_argument("--adaptive", action="store_true", help="adaptive mode: the predictor picks the NFE "
+                     "(needs GPU_WORKER_PREDICTOR_BUNDLE)")
     p.add_argument("--run-id", default=None, help="default: a new UUID, like the backend's run ids")
     p.add_argument("--no-warmup", action="store_true")
     a = p.parse_args()
@@ -34,7 +39,8 @@ def main() -> int:
     if a.no_warmup:
         config = dataclasses.replace(config, warmup_nfes=())
     worker = GpuWorker.load(config)
-    outcome = worker.run_job(Job(a.run_id or str(uuid.uuid4()), a.prompt, a.nfe))
+    mode = "adaptive" if a.adaptive else "fixed"
+    outcome = worker.run_job(Job(a.run_id or str(uuid.uuid4()), a.prompt, a.nfe, mode=mode))
     print(json.dumps(dataclasses.asdict(outcome), indent=2, default=str))
     return 0 if outcome.ok else 1
 

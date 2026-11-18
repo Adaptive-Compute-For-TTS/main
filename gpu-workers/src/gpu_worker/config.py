@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
 
 def _bool(value: str) -> bool:
@@ -20,6 +20,10 @@ def _bool(value: str) -> bool:
     if v in ("0", "false", "no", "off", ""):
         return False
     raise ValueError(f"expected a boolean, got {value!r}")
+
+
+def _path_or_none(value: str) -> Optional[Path]:
+    return Path(value) if value.strip() else None
 
 
 def _ints(value: str) -> tuple[int, ...]:
@@ -41,6 +45,10 @@ class WorkerConfig:
     # Discarded runs at startup, one per NFE, so the first real run doesn't pay for setup.
     warmup_text: str = "Hello, this is a warmup run."
     warmup_nfes: tuple[int, ...] = field(default=(10,))
+    # Adaptive mode: the predictor bundle (nfe-adapter/predictor) and the NFE used if it can't load.
+    # None: no predictor, adaptive jobs fail with a clear message. Its budgets are added to the warmup.
+    predictor_bundle: Optional[Path] = None
+    predictor_fallback_nfe: int = 32
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "WorkerConfig":
@@ -50,7 +58,8 @@ class WorkerConfig:
         """
         env = os.environ if env is None else env
         parse = {"optimize": _bool, "seed": int, "guidance_scale": float, "speaker_scale": float,
-                 "storage_dir": Path, "warmup_nfes": _ints}
+                 "storage_dir": Path, "warmup_nfes": _ints, "predictor_bundle": _path_or_none,
+                 "predictor_fallback_nfe": int}
         kwargs = {}
         for f in fields(cls):
             key = f"GPU_WORKER_{f.name.upper()}"

@@ -214,3 +214,75 @@ def test_invalid_audio_is_never_sent_to_quality_evaluator(tmp_path):
     out=worker.run_job(Job('invalid-audio','Hello there.',4))
     assert not out.ok and not calls
     assert out.result['quality']['status'] == 'skipped'
+
+
+# --- adaptive mode: the predictor picks the NFE, the executor runs it --------------------------------
+
+from nfe_predictor import BudgetPredictor, load_predictor  # noqa: E402
+from nfe_predictor.testing import make_dummy_bundle  # noqa: E402
+
+
+def make_adaptive_worker(tmp_path: Path, predictor=None, **rt_kwargs):
+    worker, rt, ex = make_worker(tmp_path, **rt_kwargs)
+    worker.predictor = predictor or BudgetPredictor.load(make_dummy_bundle(tmp_path / "bundle"))
+    return worker, rt, ex
+
+
+def test_adaptive_runs_every_patch_at_the_predicted_budget(tmp_path):
+    worker, rt, ex = make_adaptive_worker(tmp_path)
+    out = worker.run_job(Job("run-1", "Hello there.", None, mode="adaptive"))  # 2 words -> dummy picks 8
+
+    assert out.ok
+    r = out.result
+    assert r["mode"] == "adaptive" and r["nfe"] == 8 and r["nfe_per_patch"] == [8] * 6
+    assert ex.calls == [8] * 6 and rt.calls[-1]["num_steps"] == 8
+    d = r["budget_decision"]
+    assert d["nfe"] == 8 and d["fallback_reason"] is None and d["model_version"] == "dummy-v0"
+    assert d["decision_ms"] >= 0 and set(d["probabilities"]) == {"4", "8", "16", "32"}
+    json.dumps(r)
+
+
+def test_adaptive_ignores_the_requested_nfe(tmp_path):
+    worker, rt, _ = make_adaptive_worker(tmp_path)
+    out = worker.run_job(Job("run-1", "Hello there.", 32, mode="adaptive"))
+    assert out.ok and out.result["nfe"] == 8
+
+
+def test_adaptive_fallback_still_runs_and_records_why(tmp_path):
+    worker, _, ex = make_adaptive_worker(tmp_path)
+    out = worker.run_job(Job("run-1", " ".join(["word"] * 200) + ".", None, mode="adaptive"))
+    assert out.ok and out.result["nfe"] == 32 and ex.calls == [32] * 6
+    assert out.result["budget_decision"]["fallback_reason"] == "no_confident_budget"
+
+
+def test_adaptive_with_a_broken_bundle_runs_at_the_fallback(tmp_path):
+    worker, _, _ = make_adaptive_worker(tmp_path, predictor=load_predictor(tmp_path / "missing", fallback_nfe=16))
+    out = worker.run_job(Job("run-1", "Hello there.", None, mode="adaptive"))
+    assert out.ok and out.result["nfe"] == 16
+    assert out.result["budget_decision"]["fallback_reason"] == "predictor_unavailable"
+
+
+def test_adaptive_without_a_predictor_fails_clearly(tmp_path):
+    worker, rt, _ = make_worker(tmp_path)
+    out = worker.run_job(Job("run-1", "Hello there.", None, mode="adaptive"))
+    assert out.status == "failed" and "needs a predictor" in out.error_message and rt.calls == []
+
+
+def test_fixed_mode_is_unchanged_and_records_no_decision(tmp_path):
+    worker, _, ex = make_adaptive_worker(tmp_path)
+    out = worker.run_job(Job("run-1", "Hello there.", 10))
+    assert out.ok and out.result["mode"] == "fixed" and out.result["budget_decision"] is None
+    assert ex.calls == [10] * 6
+
+
+def test_unknown_mode_fails_before_generating(tmp_path):
+    worker, rt, _ = make_worker(tmp_path)
+    out = worker.run_job(Job("run-1", "Hello there.", 10, mode="turbo"))
+    assert out.status == "failed" and out.error_message.startswith("invalid mode") and rt.calls == []
+
+
+def test_warmup_covers_every_budget_the_predictor_can_pick(tmp_path):
+    worker, rt, _ = make_adaptive_worker(tmp_path)  # config warmup (4, 10) + budgets (4, 8, 16, 32)
+    assert worker.warmup_nfes() == (4, 8, 10, 16, 32)
+    worker.warmup()
+    assert [c["num_steps"] for c in rt.calls] == [4, 8, 10, 16, 32]
