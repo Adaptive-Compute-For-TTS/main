@@ -1,0 +1,1 @@
+"""NFE predictor model definitions."""
