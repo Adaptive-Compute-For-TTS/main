@@ -18,6 +18,21 @@ Owner: Tony. Status: **draft**.
 - The feature extractor is a placeholder until Shivani's shared one lands.
 - The bundle format below is a proposal: please comment before exporting.
 
+### Status vs training (as of Nov 24, `feature/nfe-predictor-training`)
+
+Training has moved to **patch-level** prediction: one decision per audio patch during generation, not one
+per request. See `nfe-predictor-training/docs/inference_compatibility.md` on that branch. This package
+still decides once per request; the per-patch API is being designed.
+
+| Piece | Training side | Here |
+|---|---|---|
+| Features | Shivani's 5 text features + `patch_index` (`text5-plus-patch-index-v1`) | placeholder `basic_text_v0`; not registered yet |
+| Model | MLP 6 → 64 → 32 → 9, one sigmoid per budget, exported as `model.npz` in this format | loads (see `tests/test_training_export_compat.py`) |
+| Budgets | 9 candidates: 4, 6, 8, 10, 12, 16, 20, 24, 32; deployment subset TBD | dummy uses 4, 8, 16, 32 |
+| `metadata.json`, `preprocessing.json` | written by `save_artifacts`; extra keys are fine | loads |
+| `policy.json` | not written: thresholds and fallback pending calibration | required to serve |
+| Trained weights | none yet: pilot data collection not run on GPU, labels pending the quality team | dummy only |
+
 The GPU worker already uses this: `adaptive` jobs call `predict_budget` and then run on the existing
 executor (see `gpu-workers/README.md`).
 
@@ -126,6 +141,22 @@ Numpy only: inference needs no torch, and the loader refuses pickles. Export fro
 
 ## Open questions
 
+Design questions raised by patch-level training (to decide before changing the code):
+- **Per-patch API.** How the executor asks for each patch's NFE, and what the context carries
+  (`text`, `patch_index`, anything else).
+- **When features are computed.** Text features once per request, with only `patch_index` changing per
+  patch?
+- **Fallback semantics per patch.** Does one failed patch decision fall back for that patch only, or
+  for the rest of the request?
+- **Deployment budgets.** All 9 candidates, or a subset like 4/8/16/32? Each budget is another
+  warmup/CUDA-graph setup on the optimized path, and a subset needs a model trained on it.
+- **Extractor sharing.** Import Shivani's `features.extractor` from the training package, or move it to a
+  small shared package that both sides install?
+- **Request-level mode.** Keep it as a simpler option, or remove it?
+- **What goes in the runs table.** Per-patch decisions could be hundreds per request: log all of them,
+  or a summary?
+
+Earlier questions:
 - **Target shape.** This draft assumes one pass probability per budget. If the model predicts the
   minimum passing budget instead (softmax over budgets + "none"), there are two options:
   - export per-budget probabilities, where P(pass at b) = sum of the classes ≤ b
