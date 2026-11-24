@@ -2,6 +2,13 @@
 
 Training, evaluation, and experimentation code for the adaptive NFE predictor.
 
+The current baseline predicts NFE pass probabilities per audio patch. Verified
+patch labels and an agreed quality protocol are still required before reporting
+training results. The 54-prompt full-utterance sweep is a legacy reference.
+
+See [the proposed collection schema and training utilities](docs/patch_dataset.md)
+and [the inference compatibility review](docs/inference_compatibility.md).
+
 ## Basic feature extraction
 
 The feature extractor contains inexpensive, deterministic properties that are
@@ -34,5 +41,6 @@ embedding features. Basic extraction does not currently use it.
 Run the test suite from this directory:
 
 ```bash
+python -m pip install torch numpy pytest
 python -m pytest tests -v
 ```

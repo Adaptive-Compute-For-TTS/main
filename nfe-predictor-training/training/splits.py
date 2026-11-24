@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -20,13 +21,16 @@ def grouped_prompt_splits(
     Families are shuffled, so ratios refer to family count (prompt count can
     differ if family sizes differ). Stratification must be audited separately.
     """
-    if abs(sum(ratios) - 1) > 1e-9 or any(x <= 0 for x in ratios):
-        raise ValueError("ratios must be positive and sum to 1")
+    if (len(ratios) != 3 or any(not math.isfinite(x) or x <= 0 for x in ratios)
+            or abs(sum(ratios) - 1) > 1e-9):
+        raise ValueError("Three finite positive ratios must sum to 1")
     families: dict[str, set[str]] = defaultdict(set)
     prompt_family: dict[str, str] = {}
     for r in records:
         pid = r["prompt_id"]
         fid = r["prompt_family_id"]
+        if not all(isinstance(x, str) and x.strip() for x in (pid, fid)):
+            raise ValueError("Prompt and family IDs must be nonempty strings")
         if pid in prompt_family and prompt_family[pid] != fid:
             raise ValueError(f"Prompt {pid} has inconsistent family ID")
         prompt_family[pid] = fid
@@ -46,8 +50,29 @@ def grouped_prompt_splits(
     return {pid: group_split[fid] for pid, fid in sorted(prompt_family.items())}
 
 
+def validate_split_assignments(records: list[dict], assignments: dict[str, str]) -> None:
+    """Audit externally supplied splits across every row, including unlabeled rows."""
+    if set(assignments) != {r["prompt_id"] for r in records}:
+        raise ValueError("Split assignments must cover exactly the dataset prompt IDs")
+    families = {}
+    prompts = {}
+    for row in records:
+        pid, fid = row["prompt_id"], row["prompt_family_id"]
+        if not all(isinstance(x, str) and x.strip() for x in (pid, fid)):
+            raise ValueError("Prompt and family IDs must be nonempty strings")
+        split = assignments[pid]
+        if split not in ("train", "val", "test"):
+            raise ValueError(f"Unknown split {split!r}")
+        if pid in prompts and prompts[pid] != fid:
+            raise ValueError(f"Prompt {pid} has inconsistent family ID")
+        if fid in families and families[fid] != split:
+            raise ValueError(f"Prompt family {fid} leaks across splits")
+        prompts[pid] = fid
+        families[fid] = split
+
+
 def initial_54_prompt_manifest(seed: int = SPLIT_SEED) -> list[dict]:
-    """A balanced split proposal for the verified p001..p054 benchmark set.
+    """Legacy utterance-benchmark reference, not the new patch training split.
 
     The source has 6 categories x 3 lengths x 3 prompts. Two per cell go to
     train. One held out per cell, alternately val/test; two held-out cells are
