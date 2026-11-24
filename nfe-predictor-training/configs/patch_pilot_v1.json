@@ -1,0 +1,10 @@
+{
+  "schema_version": "patch-nfe-v1",
+  "purpose": "Controlled one-patch-at-a-time counterfactual collection; no trained labels initially",
+  "prompt_ids": ["p001", "p004", "p010", "p013", "p021", "p023", "p028", "p031", "p038", "p040", "p046", "p049"],
+  "seeds": [42, 43],
+  "budgets": [4, 8, 16, 32],
+  "reference_nfe": 32,
+  "target_patches": 3,
+  "speaker_id": "single_voice_pilot"
+}

@@ -1,0 +1,23 @@
+# Generated pilot data can be large and may include speaker-reference material.
+runs/
+models/*
+!models/*.py
+checkpoints/
+outputs/
+artifacts/
+*.wav
+*.flac
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.npz
+observations*.jsonl
+experiment.json
+trace.json
+equivalence.json
+listening_review*.csv
+__pycache__/
+.pytest_cache/
+*.pyc

@@ -1,0 +1,14 @@
+[
+  {"id":"p001","text":"The kettle is already on the stove.","length_bucket":"short","category":"plain"},
+  {"id":"p004","text":"After the meeting ended, she packed her notes into a canvas bag and caught the last bus downtown.","length_bucket":"medium","category":"plain"},
+  {"id":"p010","text":"Your total comes to $42.75.","length_bucket":"short","category":"numbers"},
+  {"id":"p013","text":"On March 3rd, 2024, the temperature dropped to minus 18 degrees, and the school closed for 2 days.","length_bucket":"medium","category":"numbers"},
+  {"id":"p021","text":"Professor Nguyen studies archaeopteryx fossils.","length_bucket":"short","category":"names_rare_words"},
+  {"id":"p023","text":"The sommelier recommended a Gewürztraminer, but Aoife ordered the Sauvignon Blanc and a plate of bruschetta instead.","length_bucket":"medium","category":"names_rare_words"},
+  {"id":"p028","text":"The CEO joined the call at noon.","length_bucket":"short","category":"acronyms_abbreviations"},
+  {"id":"p031","text":"The FAQ says to restart the VPN, clear your DNS cache, and then contact IT if the error persists.","length_bucket":"medium","category":"acronyms_abbreviations"},
+  {"id":"p038","text":"Wow, that was incredible!","length_bucket":"short","category":"prosody"},
+  {"id":"p040","text":"Did you really drive all night to get here, or did you take the early train like last time?","length_bucket":"medium","category":"prosody"},
+  {"id":"p046","text":"Six slick seals slid south.","length_bucket":"short","category":"phonetic"},
+  {"id":"p049","text":"Priya's prickly purple pepper plants produced plenty of plump peppers, pleasing practically every passing pedestrian.","length_bucket":"medium","category":"phonetic"}
+]
