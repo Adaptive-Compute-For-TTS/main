@@ -1,0 +1,28 @@
+# CPython 3.11 only: Windows x86-64 or native Apple Silicon macOS.
+# Windows uses the official CPU wheel; no CUDA index or GPU dependencies.
+torch @ https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_amd64.whl#sha256=7631ef49fbd38d382909525b83696dc12a55d68492ade4ace3883c62b9fc140f ; sys_platform == "win32"
+torch==2.8.0 ; sys_platform == "darwin"
+numpy==2.2.6
+pytest==8.4.2
+soundfile==0.13.1
+
+# Pin the full runtime/test dependency closure for the supported platforms.
+cffi==2.0.0
+pycparser==2.23
+filelock==3.20.0
+fsspec==2025.10.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+mpmath==1.3.0
+networkx==3.5
+sympy==1.14.0
+typing_extensions==4.15.0
+colorama==0.4.6 ; sys_platform == "win32"
+iniconfig==2.3.0
+packaging==25.0
+pluggy==1.6.0
+Pygments==2.19.2
+
+# Match environment tooling as well as runtime packages.
+pip==25.3
+setuptools==80.9.0
