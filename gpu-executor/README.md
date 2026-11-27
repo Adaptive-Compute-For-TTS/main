@@ -20,11 +20,28 @@ result.num_patches, result.nfe_per_patch   # every entry == 10, or it raises
 
 `generate_fixed_nfe` takes the NFE once, freezes it for every patch, runs every patch through the executor, and raises if any patch got a different NFE or skipped the executor. Hooks are restored afterwards, so a plain `rt.generate()` is stock dots.tts again. NFE = dots.tts `num_steps` (team convention; CFG's cond + uncond run in the same DiT call).
 
+### Different NFE per patch
+
+```python
+from adaptive_nfe import ListScheduler, generate_scheduled
+
+result = generate_scheduled(rt, ListScheduler([32, 8, 8, 16]), text="Hello there.", guidance_scale=1.2)
+result.nfe_per_patch    # [32, 8, 8, 16, 16, ...]: past the end of the list, the last value repeats
+```
+
+`generate_scheduled` takes any `Scheduler` (subclass it and implement `choose_nfe(info)`; `info` has
+`patch_index` and `llm_hidden`), so the predictor plugs in as a scheduler. Same checks and hook restore as
+`generate_fixed_nfe`, minus the "one NFE" check. `time_patches=True` records CUDA-synced DiT time per patch.
+
+On the optimized path a change of NFE between patches is correct but not free: the DiT KV cache keeps one
+K/V copy per ODE step, so dots.tts drops it and recomputes K/V for the whole history at every ODE step.
+Eager keeps no cache. `scripts/mixed_nfe.py` measures both.
+
 ## Folders
 
 - `patches/`: our edit to dots.tts (the scheduler and executor hooks) as a git patch, applied to your dots.tts clone
-- `src/adaptive_nfe/`: the scheduler (`scheduler.py`), the DiT executor (`executor.py`; `ode.py` for the eager path, `optimized.py` for the optimized path), and `generate_fixed_nfe` (`fixed_nfe.py`)
-- `scripts/`: setup (`setup_env.sh`), the equivalence test (`check_equivalence.py`), prompt + NFE → WAV (`generate.py`), the ml-evals benchmark runner (`run_benchmark.py`), results CSV → PNGs (`plot_results.py`), `inspect_dit.py` for poking at the DiT
+- `src/adaptive_nfe/`: the scheduler (`scheduler.py`), the DiT executor (`executor.py`; `ode.py` for the eager path, `optimized.py` for the optimized path), `generate_fixed_nfe` (`fixed_nfe.py`) and `generate_scheduled` (`scheduled.py`, per-patch NFE)
+- `scripts/`: setup (`setup_env.sh`), the equivalence test (`check_equivalence.py`), prompt + NFE → WAV (`generate.py`), the ml-evals benchmark runner (`run_benchmark.py`), mixed per-patch NFE timing (`mixed_nfe.py`), results CSV → PNGs (`plot_results.py`), `inspect_dit.py` for poking at the DiT
 - `tests/`: CPU checks that need no weights, plus `test_fixed_nfe_gpu.py` (real model, skips without CUDA)
 - `docs/design/`: executor design (`executor-baseline.md`) and next-phase notes (`batching-exploration.md`)
 - `results/`: committed result tables (CSV) and charts (PNG)

@@ -54,3 +54,19 @@ class FixedScheduler(Scheduler):
 
     def choose_nfe(self, info: PatchInfo) -> int:
         return self.nfe
+
+
+class ListScheduler(Scheduler):
+    """A fixed per-patch schedule: patch i gets nfes[i]; past the end, the last value repeats.
+
+    For experiments and tests (e.g. [32, 8, 8, 16, ...]); a predictor-driven scheduler picks per patch.
+    """
+
+    def __init__(self, nfes) -> None:
+        super().__init__()
+        self.nfes = [int(n) for n in nfes]
+        if not self.nfes or any(n <= 0 for n in self.nfes):
+            raise ValueError(f"nfes must be a non-empty list of positive ints, got {nfes!r}")
+
+    def choose_nfe(self, info: PatchInfo) -> int:
+        return self.nfes[min(info.patch_index, len(self.nfes) - 1)]
