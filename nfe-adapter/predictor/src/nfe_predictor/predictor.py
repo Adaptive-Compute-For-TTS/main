@@ -1,4 +1,8 @@
-"""predict_budget: one request's text -> the NFE it runs at, plus why. Never raises."""
+"""predict_budget: a request's text (and, for patch-level bundles, the patch index) -> an NFE, plus why.
+
+Never raises. Request-level bundles: call once per request with {"text"}. Patch-level bundles
+(metadata prediction_unit "audio_patch"): call once per patch with {"text", "patch_index"}.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from typing import Any, Mapping, Optional, Union
 import numpy as np
 
 from nfe_predictor.bundle import Bundle, load_bundle
+from nfe_predictor.features import ContextError
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +70,10 @@ class BudgetPredictor:
     def fallback_nfe(self) -> int:
         return self.bundle.policy.fallback_nfe
 
+    @property
+    def prediction_unit(self) -> str:
+        return self.bundle.prediction_unit
+
     def predict_budget(self, context: Mapping[str, Any]) -> BudgetDecision:
         start = time.perf_counter()
         probabilities: Optional[dict] = None
@@ -84,9 +93,13 @@ class BudgetPredictor:
             if len(text) > self.bundle.policy.max_text_chars:
                 return decide(fallback, "text_too_long",
                               f"{len(text)} chars > max_text_chars {self.bundle.policy.max_text_chars}")
+            try:
+                self.bundle.extractor.check_context(context)
+            except ContextError as e:
+                return decide(fallback, "invalid_input", str(e))
 
             try:
-                x = self.bundle.features(text)
+                x = self.bundle.features(text, context)
             except Exception as e:  # noqa: BLE001
                 return decide(fallback, "feature_error", f"{type(e).__name__}: {e}")
             if not np.all(np.isfinite(x)):
@@ -97,7 +110,10 @@ class BudgetPredictor:
             except Exception as e:  # noqa: BLE001
                 return decide(fallback, "model_error", f"{type(e).__name__}: {e}")
             budgets = self.bundle.policy.budgets
-            if p.shape != (len(budgets),) or not np.all(np.isfinite(p)) or np.any((p < 0) | (p > 1)):
+            if p.shape != (len(self.bundle.model_budgets),):
+                return decide(fallback, "invalid_prediction", f"bad model output shape {p.shape}")
+            p = self.bundle.policy_probabilities(p)  # served budgets only; untrained heads are never read
+            if not np.all(np.isfinite(p)) or np.any((p < 0) | (p > 1)):
                 return decide(fallback, "invalid_prediction", f"bad model output {p.tolist()!r}")
             probabilities = {str(nfe): round(float(v), 6) for nfe, v in zip(budgets, p)}
 
@@ -118,6 +134,10 @@ class FallbackPredictor:
     @property
     def budgets(self) -> tuple[int, ...]:
         return (self.fallback_nfe,)
+
+    @property
+    def prediction_unit(self) -> str:
+        return "request"
 
     def predict_budget(self, context: Mapping[str, Any]) -> BudgetDecision:
         return BudgetDecision(nfe=self.fallback_nfe, fallback_reason="predictor_unavailable", model_version=None,

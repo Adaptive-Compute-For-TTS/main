@@ -1,40 +1,30 @@
 # nfe-adapter/predictor
 
-Inference package for the shared NFE predictor: given a request's text, pick the NFE budget the whole
-request runs at, before generation starts.
+Inference package for the shared NFE predictor: given the text (and, for patch-level models, which
+audio patch is next), pick the NFE budget to run.
 
 ```python
 from nfe_predictor import load_predictor
 
 predictor = load_predictor("models/predictor-v1", fallback_nfe=32)   # once, at worker startup
-decision = predictor.predict_budget({"text": "Call me at 555-0142 on Friday."})   # never raises
-decision.nfe               # e.g. 16: the request runs at this NFE
+predictor.prediction_unit   # "audio_patch" (training's model) or "request" (old dummy)
+
+# patch level: once per patch, inside generation
+decision = predictor.predict_budget({"text": "Call me at 555-0142 on Friday.", "patch_index": 0})  # never raises
+decision.nfe               # e.g. 16: this patch runs at this NFE
 decision.fallback_reason   # None, or why the safe fallback NFE was used
 decision.as_dict()         # JSON-safe, for the runs table and telemetry
 ```
 
-Owner: Tony. Status: **draft**.
-- The package runs end to end on a dummy model.
-- The feature extractor is a placeholder until Shivani's shared one lands.
-- The bundle format below is a proposal: please comment before exporting.
+Owner: Tony. Status: **draft, matches the training spec; waiting on trained weights and policy values**.
+- Implements the training team's input schema `text5-plus-patch-index-v1` (Shivani's 5 text features
+  + `patch_index`), checked against values from the training code (`tests/test_features.py`).
+- Loads training's export (`save_artifacts`) unchanged, and serves a subset of its 9 heads
+  (`tests/test_training_export_compat.py`).
+- The GPU worker does not call it per patch yet (see open questions); it refuses patch-level bundles.
 
-### Status vs training (as of Nov 24, `feature/nfe-predictor-training`)
-
-Training has moved to **patch-level** prediction: one decision per audio patch during generation, not one
-per request. See `nfe-predictor-training/docs/inference_compatibility.md` on that branch. This package
-still decides once per request; the per-patch API is being designed.
-
-| Piece | Training side | Here |
-|---|---|---|
-| Features | Shivani's 5 text features + `patch_index` (`text5-plus-patch-index-v1`) | placeholder `basic_text_v0`; not registered yet |
-| Model | MLP 6 → 64 → 32 → 9, one sigmoid per budget, exported as `model.npz` in this format | loads (see `tests/test_training_export_compat.py`) |
-| Budgets | 9 candidates: 4, 6, 8, 10, 12, 16, 20, 24, 32; deployment subset TBD | dummy uses 4, 8, 16, 32 |
-| `metadata.json`, `preprocessing.json` | written by `save_artifacts`; extra keys are fine | loads |
-| `policy.json` | not written: thresholds and fallback pending calibration | required to serve |
-| Trained weights | none yet: pilot data collection not run on GPU, labels pending the quality team | dummy only |
-
-The GPU worker already uses this: `adaptive` jobs call `predict_budget` and then run on the existing
-executor (see `gpu-workers/README.md`).
+The GPU worker uses request-level bundles today: `adaptive` jobs call `predict_budget` once and then run
+on the existing executor (see `gpu-workers/README.md`).
 
 ## Where it sits
 
@@ -61,8 +51,9 @@ and worker run it unchanged.
 
 ## `predict_budget(context) -> BudgetDecision`
 
-**Input:** a mapping with `text` (str). Other keys are ignored for now; there's room for speaker,
-mode, and so on later.
+**Input:** a mapping with `text` (str), plus `patch_index` (int ≥ 0, zero-based: the patch about to be
+generated) for patch-level bundles. A missing or bad `patch_index` is `invalid_input`. Other keys are
+ignored. Text features are cached per text, so per-patch calls only redo the cheap part (median ~0.01 ms).
 
 **Output:** a `BudgetDecision`. Use `.as_dict()` for JSON.
 
@@ -85,7 +76,7 @@ problem can't fail a run.
 | reason | when |
 |---|---|
 | `no_confident_budget` | no budget reached its threshold (includes "every budget fails") |
-| `invalid_input` | the context isn't a mapping with a non-empty string `text` |
+| `invalid_input` | the context isn't a mapping with a non-empty string `text`, or a patch-level bundle got no valid `patch_index` |
 | `text_too_long` | the text is longer than the policy's `max_text_chars` (outside the training range) |
 | `feature_error` | the extractor raised, or returned the wrong shape or non-finite values |
 | `model_error` | the model raised |
@@ -105,17 +96,21 @@ predictor-v1/
 └── model.npz           the weights
 ```
 
-`metadata.json`
+`metadata.json` (extra keys, such as training's split and history, are kept and ignored)
 ```json
 {"schema_version": 1, "model_version": "predictor-v1", "model_type": "mlp_npz",
- "label": "pass = WER/CER + speaker similarity criteria v1 (Arush, Atharv)",
- "trained_on": "dataset manifest id + git sha"}
+ "prediction_unit": "audio_patch", "budgets": [4, 6, 8, 10, 12, 16, 20, 24, 32],
+ "label_protocol": "...", "source_sha256": "..."}
 ```
+- `prediction_unit`: `"audio_patch"` (one decision per patch, needs `patch_index`) or `"request"` (default).
+- `budgets`: the NFE of each model output head, in order. Defaults to the policy's budgets.
 
 `preprocessing.json`: must match training exactly. The loader refuses a bundle whose feature names
 (and order) differ from what the named extractor produces.
 ```json
-{"extractor": "basic_text_v0", "feature_names": ["n_chars", "n_words", "..."],
+{"extractor": "text5-plus-patch-index-v1",
+ "feature_names": ["character_count", "word_count", "punctuation_count", "digit_count",
+                   "average_word_length", "patch_index"],
  "mean": [...], "std": [...]}
 ```
 The model's input is `(features - mean) / std`. Every `std` must be > 0.
@@ -125,7 +120,8 @@ The model's input is `(features - mean) / std`. Every `std` must be > 0.
 {"policy_version": "calib-v1", "budgets": [4, 8, 16, 32], "thresholds": [0.9, 0.9, 0.9, 0.9],
  "fallback_nfe": 32, "max_text_chars": 1000}
 ```
-- `budgets`: ascending, each a supported NFE. The backend accepts 4-32, and on the optimized path the
+- `budgets`: the budgets this policy may pick, ascending, each one a model head (a subset is fine:
+  serve only budgets with trained, evaluated heads). The backend accepts 4-32, and on the optimized path the
   worker warms each one up.
 - `thresholds`: one per budget, each in (0, 1]. The policy picks the smallest budget whose pass
   probability is at least its threshold.
@@ -164,8 +160,8 @@ Earlier questions:
 - **Tree models (Eason).** They'd need a `joblib` adapter (pickles, so trusted bundles only), or ONNX
   for every model. `models.py` has a single place to add loaders.
 - **Monotonicity.** Should the policy force probabilities to be non-decreasing in NFE?
-- **Feature extractor.** Replace the `basic_text_v0` placeholder with Shivani's extractor, imported
-  rather than copied. Add a parity test: fixed texts must give the same features as training.
+- **Feature extractor.** Copied from training (no torch needed here) and pinned by a parity test. If
+  training changes it, the schema name changes and the test values are regenerated.
 - **Values.** The budgets, thresholds and fallback NFE come from Eric's calibration.
 
 ## Layout and checks

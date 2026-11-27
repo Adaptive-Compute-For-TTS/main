@@ -68,13 +68,13 @@ def test_text_too_long_falls_back(tmp_path):
 def test_feature_error_falls_back(predictor, monkeypatch):
     def boom(text):
         raise RuntimeError("tokenizer exploded")
-    monkeypatch.setattr(type(predictor.bundle), "features", lambda self, text: boom(text))
+    monkeypatch.setattr(type(predictor.bundle), "features", lambda self, text, context: boom(text))
     d = predictor.predict_budget({"text": SHORT})
     assert d.fallback_reason == "feature_error" and "tokenizer exploded" in d.error
 
 
 def test_non_finite_features_fall_back(predictor, monkeypatch):
-    monkeypatch.setattr(type(predictor.bundle), "features", lambda self, text: np.full(6, np.nan))
+    monkeypatch.setattr(type(predictor.bundle), "features", lambda self, text, context: np.full(6, np.nan))
     assert predictor.predict_budget({"text": SHORT}).fallback_reason == "feature_error"
 
 

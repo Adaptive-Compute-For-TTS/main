@@ -3,9 +3,13 @@
 A bundle that loads is internally consistent:
   - every file is present
   - the extractor is known, and its feature names and order match preprocessing.json
-  - the model's input size = number of features, and its output size = number of budgets
-  - the policy is valid
+  - the model's input size = number of features
+  - the model's output heads = metadata "budgets" (or the policy's budgets if metadata has none)
+  - the policy is valid and only uses budgets the model has a head for
 Anything else raises BundleError at startup, not at request time.
+
+The policy may serve a subset of the model's budgets: training keeps 9 heads but the pilot only labels
+4/8/16/32, so the untrained heads are never read.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Mapping, Union
 
 import numpy as np
 
@@ -41,10 +45,21 @@ class Bundle:
     model: Any
     policy: Policy
     sha256: str
+    model_budgets: tuple[int, ...]  # one per model output head, in order
+    heads: tuple[int, ...]  # model output index for each policy budget
 
-    def features(self, text: str) -> np.ndarray:
+    @property
+    def prediction_unit(self) -> str:
+        """"audio_patch" (one decision per patch, context needs patch_index) or "request"."""
+        return str(self.metadata.get("prediction_unit", "request"))
+
+    def features(self, text: str, context: Mapping[str, Any]) -> np.ndarray:
         """Raw features -> standardized model input, exactly as in training."""
-        return (self.extractor(text) - self.mean) / self.std
+        return (self.extractor(text, context) - self.mean) / self.std
+
+    def policy_probabilities(self, model_output: np.ndarray) -> np.ndarray:
+        """The model's outputs for the policy's budgets only, in policy order."""
+        return model_output[list(self.heads)]
 
 
 def _read_json(path: Path) -> dict:
@@ -125,10 +140,18 @@ def load_bundle(path: Union[str, Path]) -> Bundle:
         raise BundleError(f"could not load {model_file}: {type(e).__name__}: {e}") from None
     if model.n_inputs != len(names):
         raise BundleError(f"model takes {model.n_inputs} inputs but there are {len(names)} features")
-    if model.n_outputs != len(policy.budgets):
-        raise BundleError(f"model gives {model.n_outputs} outputs but there are {len(policy.budgets)} budgets")
+    model_budgets = tuple(meta.get("budgets", policy.budgets))
+    if any(isinstance(b, bool) or not isinstance(b, int) for b in model_budgets) or len(set(model_budgets)) != len(model_budgets):
+        raise BundleError(f"metadata.json budgets must be distinct ints, got {list(model_budgets)}")
+    if model.n_outputs != len(model_budgets):
+        raise BundleError(f"model gives {model.n_outputs} outputs but there are {len(model_budgets)} budgets"
+                          + (" in metadata.json" if "budgets" in meta else ""))
+    unknown = [b for b in policy.budgets if b not in model_budgets]
+    if unknown:
+        raise BundleError(f"policy.json budgets {unknown} have no model output; model budgets: {list(model_budgets)}")
+    heads = tuple(model_budgets.index(b) for b in policy.budgets)
 
     files = ["metadata.json", "preprocessing.json", "policy.json", model_file]
     return Bundle(path=path, model_version=model_version, model_type=model_type, metadata=meta,
                   extractor=extractor, mean=mean, std=std, model=model, policy=policy,
-                  sha256=bundle_sha256(path, files))
+                  sha256=bundle_sha256(path, files), model_budgets=model_budgets, heads=heads)

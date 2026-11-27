@@ -219,7 +219,7 @@ def test_invalid_audio_is_never_sent_to_quality_evaluator(tmp_path):
 # --- adaptive mode: the predictor picks the NFE, the executor runs it --------------------------------
 
 from nfe_predictor import BudgetPredictor, load_predictor  # noqa: E402
-from nfe_predictor.testing import make_dummy_bundle  # noqa: E402
+from nfe_predictor.testing import make_dummy_bundle, make_dummy_patch_bundle  # noqa: E402
 
 
 def make_adaptive_worker(tmp_path: Path, predictor=None, **rt_kwargs):
@@ -266,6 +266,13 @@ def test_adaptive_without_a_predictor_fails_clearly(tmp_path):
     worker, rt, _ = make_worker(tmp_path)
     out = worker.run_job(Job("run-1", "Hello there.", None, mode="adaptive"))
     assert out.status == "failed" and "needs a predictor" in out.error_message and rt.calls == []
+
+
+def test_patch_level_bundle_is_refused_until_per_patch_wiring_exists(tmp_path):
+    p = BudgetPredictor.load(make_dummy_patch_bundle(tmp_path / "patch"))
+    worker, rt, _ = make_adaptive_worker(tmp_path, predictor=p)
+    out = worker.run_job(Job("run-1", "Hello there.", None, mode="adaptive"))
+    assert out.status == "failed" and "patch-level" in out.error_message and rt.calls == []
 
 
 def test_fixed_mode_is_unchanged_and_records_no_decision(tmp_path):

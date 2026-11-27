@@ -1,9 +1,8 @@
 """The training side's export layout (feature/nfe-predictor-training, training/train.py save_artifacts)
 loads with this package's bundle loader.
 
-Covers the file layout only: extra metadata/preprocessing keys, a 6 -> 64 -> 32 -> 9 MLP, 9 budgets.
-Not covered yet, pending design: the real text5-plus-patch-index-v1 extractor and calling the model
-per patch. The extractor registered here is a stand-in for loading, not a parity implementation.
+Covers the file layout: extra metadata/preprocessing keys, a 6 -> 64 -> 32 -> 9 MLP, 9 model budgets
+with a policy serving a subset. Feature parity is in test_features.py.
 """
 
 from __future__ import annotations
@@ -13,8 +12,7 @@ import json
 import numpy as np
 import pytest
 
-from nfe_predictor import BundleError, load_bundle
-from nfe_predictor.features import EXTRACTORS, Extractor
+from nfe_predictor import BudgetPredictor, BundleError, load_bundle
 
 TRAINING_FEATURES = ("character_count", "word_count", "punctuation_count", "digit_count",
                      "average_word_length", "patch_index")
@@ -23,9 +21,8 @@ SCHEMA = "text5-plus-patch-index-v1"
 
 
 @pytest.fixture
-def training_export(tmp_path, monkeypatch):
+def training_export(tmp_path):
     """A folder shaped like save_artifacts() output (minus checkpoint.pt), random weights."""
-    monkeypatch.setitem(EXTRACTORS, SCHEMA, Extractor(SCHEMA, TRAINING_FEATURES, lambda text: [0.0] * 6))
     d = tmp_path / "export"
     d.mkdir()
     rng = np.random.default_rng(0)
@@ -67,8 +64,16 @@ def test_export_plus_policy_loads(training_export):
     assert p.shape == (9,) and np.all((p >= 0) & (p <= 1))
 
 
-def test_policy_on_a_budget_subset_is_refused(training_export):
-    # A 4-budget deployment subset needs a 4-output model (or a subset adapter): not silently sliced.
+def test_policy_can_serve_a_subset_of_the_heads(training_export):
+    # Pilot labels only 4/8/16/32: the policy serves those, the other 5 heads are never read.
     write_policy(training_export, budgets=[4, 8, 16, 32], thresholds=[0.9] * 4)
-    with pytest.raises(BundleError, match="9 outputs but there are 4 budgets"):
+    b = load_bundle(training_export)
+    assert b.model_budgets == tuple(TRAINING_BUDGETS) and b.heads == (0, 2, 5, 8)
+    d = BudgetPredictor(b).predict_budget({"text": "Hello, world!", "patch_index": 3})
+    assert set(d.probabilities) == {"4", "8", "16", "32"} and d.nfe in (4, 8, 16, 32)
+
+
+def test_policy_budget_without_a_head_is_refused(training_export):
+    write_policy(training_export, budgets=[4, 8, 14, 32], thresholds=[0.9] * 4)
+    with pytest.raises(BundleError, match=r"budgets \[14\] have no model output"):
         load_bundle(training_export)

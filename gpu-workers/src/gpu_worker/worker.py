@@ -163,6 +163,11 @@ class GpuWorker:
         if job.mode == "adaptive":
             if self.predictor is None:
                 return _failed("adaptive mode needs a predictor (set GPU_WORKER_PREDICTOR_BUNDLE)")
+            if getattr(self.predictor, "prediction_unit", "request") != "request":
+                # A patch-level bundle needs one decision per patch inside generation (scheduler hook).
+                # That wiring isn't built yet; refuse instead of silently running everything at fallback.
+                return _failed("predictor bundle is patch-level (prediction_unit "
+                               f"{self.predictor.prediction_unit!r}); per-patch adaptive mode is not wired yet")
             # Never raises: problems come back as the fallback NFE with a fallback_reason.
             decision = self.predictor.predict_budget({"text": job.prompt}).as_dict()
             nfe = decision["nfe"]

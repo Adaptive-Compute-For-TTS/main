@@ -25,7 +25,7 @@ def edit(path, name, **changes):
 def test_valid_bundle_loads(bundle):
     b = load_bundle(bundle)
     assert b.model_version == "dummy-v0" and b.policy.budgets == (4, 8, 16, 32)
-    assert b.features("Hi there.").shape == (6,)
+    assert b.features("Hi there.", {}).shape == (6,)
 
 
 @pytest.mark.parametrize("name", ["metadata.json", "preprocessing.json", "policy.json", "model.npz"])
