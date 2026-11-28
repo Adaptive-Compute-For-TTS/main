@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import TensorDataset
 
 from models.mlp import PatchNFEPredictor, masked_bce_loss
+from experiments.sequence_cost import CostModel, DEFAULT_POLICIES, select_and_score
 from training.evaluate import compare_fixed_nfe, per_budget_metrics
 from training.train import TrainingConfig, make_loader, seed_everything
 
@@ -25,6 +26,8 @@ class SplitArrays:
     x: np.ndarray  # [n, d], already standardized
     y: np.ndarray  # [n, budgets]
     m: np.ndarray  # [n, budgets]
+    sequence_ids: tuple[str, ...] = ()  # request of each row, for switch-aware cost
+    positions: tuple[int, ...] = ()     # patch_index of each row
 
     def tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return (torch.tensor(self.x, dtype=torch.float32),
@@ -120,8 +123,9 @@ def oracle_mean_nfe(arrays: SplitArrays, budgets: tuple[int, ...], fallback_nfe:
 def score_seed(
     model, val: SplitArrays, test: SplitArrays, budgets: tuple[int, ...], *,
     fixed_nfe: int, fallback_nfe: int, thresholds: Sequence[float] = DEFAULT_THRESHOLDS,
+    cost_models: Sequence[CostModel] = (), policies: Sequence[str] = DEFAULT_POLICIES,
 ) -> dict:
-    """Test-set metrics for one trained model. The threshold comes from validation only."""
+    """Test-set metrics for one trained model. Thresholds and policies come from validation only."""
     p_val, p_test = probabilities(model, val), probabilities(model, test)
     threshold = choose_threshold(p_val, val, budgets, fixed_nfe=fixed_nfe,
                                  fallback_nfe=fallback_nfe, thresholds=thresholds)
@@ -131,4 +135,9 @@ def score_seed(
         _, y, m = test.tensors()
         result["selection"] = compare_fixed_nfe(p_test, y, m, fixed_nfe=fixed_nfe, threshold=threshold,
                                                 fallback_nfe=fallback_nfe, budgets=budgets)
+    result["sequence_selection"] = [
+        select_and_score(p_val, val, p_test, test, budgets, fixed_nfe=fixed_nfe, fallback_nfe=fallback_nfe,
+                         cost=cost, policies=policies, thresholds=thresholds)
+        for cost in cost_models
+    ]
     return result

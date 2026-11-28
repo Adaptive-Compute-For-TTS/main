@@ -19,6 +19,7 @@ A report built from legacy dry-run labels has "conclusive": false; do not quote 
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import asdict, replace
 from collections.abc import Mapping, Sequence
 import json
@@ -35,6 +36,7 @@ from experiments.ablation_data import (
 from experiments.ablation_train import (
     DEFAULT_THRESHOLDS, SplitArrays, fit_standardizer, oracle_mean_nfe, score_seed, train_mlp,
 )
+from experiments.sequence_cost import COST_MODELS, CostModel, DEFAULT_POLICIES, policy as check_policy
 from experiments.feature_sets import BASE_FITTERS, Fitter, FittedFeatures, build, with_static_embeddings
 from features.embeddings import StaticEmbeddings
 from training.contracts import FALLBACK_NFE, REFERENCE_NFE
@@ -46,7 +48,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 LEGACY_CLIPS = _ROOT.parent / "quality-evals/wer_cer/results/nfe_benchmark/clips_arush.csv"
 LEGACY_SPLIT = _ROOT / "configs/benchmark_54_split_v1.csv"
 DRY_RUN_WARNING = ("Labels are a provisional dry run on the legacy full-utterance sweep, "
-                   "not reviewed patch labels. Use this to check the harness, not to compare features.")
+                   "not reviewed patch labels, and each utterance is priced as a single patch. "
+                   "Use this to check the harness, not to compare features.")
 
 
 def _unique_texts(examples: Sequence[AblationExample]) -> list[str]:
@@ -66,7 +69,9 @@ def _split_arrays(fitted: FittedFeatures, dataset: AblationDataset) -> dict[str,
     return {
         s: SplitArrays((raw[s] - mean) / std,
                        np.array([e.targets for e in dataset.split(s)], dtype=np.float64),
-                       np.array([e.mask for e in dataset.split(s)], dtype=np.float64))
+                       np.array([e.mask for e in dataset.split(s)], dtype=np.float64),
+                       tuple(e.sequence_id for e in dataset.split(s)),
+                       tuple(e.patch_index for e in dataset.split(s)))
         for s in SPLITS
     }
 
@@ -103,13 +108,40 @@ def _summarize(seed_results: Sequence[dict]) -> dict:
         "fixed_pass_rate": _mean_std([s["fixed_pass_rate"] for s in selected]),
         "paired_coverage": _mean_std([s["paired_coverage"] for s in selected]),
         "seeds_without_threshold": sum(r["selection"] is None for r in seed_results),
+        "sequence_selection": _summarize_sequences(seed_results),
     }
+
+
+def _summarize_sequences(seed_results: Sequence[dict]) -> list[dict]:
+    """Per cost model: test speed and quality of the validation-chosen policy, across seeds."""
+    by_cost: dict[str, list[dict]] = {}
+    for r in seed_results:
+        for sel in r.get("sequence_selection", []):
+            by_cost.setdefault(sel["cost_model"], []).append(sel)
+    out = []
+    for name, sels in by_cost.items():
+        chosen = [s for s in sels if s["test"] is not None]
+        out.append({
+            "cost_model": name,
+            "speedup_vs_fixed": _mean_std([s["speedup_vs_fixed"] for s in chosen]),
+            "request_ms": _mean_std([s["test"]["mean_request_ms"] for s in chosen]),
+            "fixed_request_ms": _mean_std([s["fixed_test"]["mean_request_ms"] for s in sels]),
+            "switches": _mean_std([s["test"]["mean_switches"] for s in chosen]),
+            "pass_rate": _mean_std([s["test"]["pass_rate"] for s in chosen]),
+            "fixed_pass_rate": _mean_std([s["test"]["fixed_pass_rate"] for s in chosen]),
+            "paired_coverage": _mean_std([s["test"]["paired_coverage"] for s in chosen]),
+            "seeds_with_estimated_cost": sum(s["test"]["cost_estimated_outside_measured_nfes"] for s in chosen),
+            "policies": dict(Counter(f"{s['policy']}@{s['threshold']}" for s in chosen)),
+            "seeds_without_choice": len(sels) - len(chosen),
+        })
+    return out
 
 
 def run_feature_set(
     dataset: AblationDataset, spec: str, seeds: Sequence[int], config: TrainingConfig, *,
     fixed_nfe: int, fallback_nfe: int, thresholds: Sequence[float] = DEFAULT_THRESHOLDS,
     base_fitters: Mapping[str, Fitter] = BASE_FITTERS,
+    cost_models: Sequence[CostModel] = (), policies: Sequence[str] = DEFAULT_POLICIES,
 ) -> dict:
     fitted = build(spec, base_fitters)(_unique_texts(dataset.split("train")))
     arrays = _split_arrays(fitted, dataset)
@@ -118,7 +150,8 @@ def run_feature_set(
         seed_config = replace(config, seed=seed)
         model = train_mlp(arrays["train"], arrays["val"], seed_config)
         result = score_seed(model, arrays["val"], arrays["test"], dataset.budgets,
-                            fixed_nfe=fixed_nfe, fallback_nfe=fallback_nfe, thresholds=thresholds)
+                            fixed_nfe=fixed_nfe, fallback_nfe=fallback_nfe, thresholds=thresholds,
+                            cost_models=cost_models, policies=policies)
         seed_results.append({"seed": seed, **result})
     return {"spec": fitted.spec, **cost_profile(fitted, _unique_texts(dataset.examples)),
             "summary": _summarize(seed_results), "seeds": seed_results}
@@ -129,9 +162,13 @@ def run_ablation(
     config: TrainingConfig = TrainingConfig(), *, fixed_nfe: int = REFERENCE_NFE,
     fallback_nfe: int = FALLBACK_NFE, thresholds: Sequence[float] = DEFAULT_THRESHOLDS,
     base_fitters: Mapping[str, Fitter] = BASE_FITTERS,
+    cost_models: Sequence[CostModel] = (COST_MODELS["nfe"], COST_MODELS["optimized-rtx5060"]),
+    policies: Sequence[str] = DEFAULT_POLICIES,
 ) -> dict:
     if not seeds:
         raise ValueError("need at least one seed")
+    for name in policies:
+        check_policy(name)
     for nfe in (fixed_nfe, fallback_nfe):
         if nfe not in dataset.budgets:
             raise ValueError(f"NFE {nfe} is not on the dataset budget axis {dataset.budgets}")
@@ -149,8 +186,10 @@ def run_ablation(
         "seeds": list(seeds), "training_config": asdict(config), "thresholds": list(thresholds),
         "feature_sets": [run_feature_set(dataset, s, seeds, config, fixed_nfe=fixed_nfe,
                                          fallback_nfe=fallback_nfe, thresholds=thresholds,
-                                         base_fitters=base_fitters)
+                                         base_fitters=base_fitters, cost_models=cost_models,
+                                         policies=policies)
                          for s in specs],
+        "cost_models": {c.name: c.source for c in cost_models}, "policies": list(policies),
     }
 
 
@@ -179,6 +218,26 @@ def to_markdown(report: dict) -> str:
             f"| {_fmt(s['test_brier'])} | {_fmt(s['test_loss'])} | {_fmt(s['adaptive_mean_nfe'], 1)} "
             f"| {_fmt(s['adaptive_pass_rate'], 2)} | {_fmt(s['fixed_pass_rate'], 2)} "
             f"| {s['seeds_without_threshold']} |")
+    if any(fs["summary"]["sequence_selection"] for fs in report["feature_sets"]):
+        lines += [
+            "", "Budget selection with switch cost. Policy and threshold are chosen on validation. Pass rates "
+            "are on patches with both outcomes measured, from per-patch labels, so they are estimates. "
+            "`*`: some chosen NFEs were not measured by the cost model, so their cost is extrapolated.", "",
+            "| feature set | cost model | speedup vs fixed | est. ms/request (fixed) "
+            "| switches/request | pass (fixed) | chosen policy@threshold (seeds) |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for fs in report["feature_sets"]:
+            for sel in fs["summary"]["sequence_selection"]:
+                fixed_ms = sel["fixed_request_ms"]["mean"] if sel["fixed_request_ms"] else float("nan")
+                fixed_pass = sel["fixed_pass_rate"]["mean"] if sel["fixed_pass_rate"] else float("nan")
+                chosen = ", ".join(f"{k} ({v})" for k, v in sel["policies"].items()) or "none"
+                star = "*" if sel["seeds_with_estimated_cost"] else ""
+                lines.append(
+                    f"| `{fs['spec']}` | {sel['cost_model']} | {_fmt(sel['speedup_vs_fixed'], 2)}{star} "
+                    f"| {_fmt(sel['request_ms'], 0)} ({fixed_ms:.0f}) | {_fmt(sel['switches'], 2)} "
+                    f"| {_fmt(sel['pass_rate'], 2)} ({fixed_pass:.2f}) | {chosen} |")
+        lines += ["", *(f"- `{name}`: {source}" for name, source in report["cost_models"].items())]
     return "\n".join(lines) + "\n"
 
 
@@ -186,6 +245,12 @@ def _load(args) -> AblationDataset:
     if args.observations:
         return from_patch_targets(build_targets(read_observations(args.observations)), seed=args.split_seed)
     return legacy_utterance_dry_run(args.legacy_clips, args.legacy_split, wer_max=args.wer_max)
+
+
+def _cost_model(name: str) -> CostModel:
+    if name.strip() not in COST_MODELS:
+        raise SystemExit(f"unknown cost model {name!r}; known: {sorted(COST_MODELS)}")
+    return COST_MODELS[name.strip()]
 
 
 def _load_embeddings(pairs: Sequence[str]) -> dict[str, StaticEmbeddings]:
@@ -216,6 +281,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--fallback-nfe", type=int, default=FALLBACK_NFE)
     parser.add_argument("--static-embeddings", action="append", default=[], metavar="NAME=DIR",
                         help="add a model2vec directory as base feature set NAME (repeatable)")
+    parser.add_argument("--cost-models", default="nfe,optimized-rtx5060",
+                        help=f"comma-separated, from {sorted(COST_MODELS)}")
+    parser.add_argument("--policies", default=",".join(DEFAULT_POLICIES),
+                        help="comma-separated: per_patch, request_max, min_runR")
     parser.add_argument("--out", type=Path, help="write the full JSON report here")
     args = parser.parse_args(argv)
 
@@ -224,6 +293,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         [int(s) for s in args.seeds.split(",")], TrainingConfig(epochs=args.epochs),
         fixed_nfe=args.fixed_nfe, fallback_nfe=args.fallback_nfe,
         base_fitters=with_static_embeddings(_load_embeddings(args.static_embeddings)),
+        cost_models=[_cost_model(n) for n in args.cost_models.split(",") if n.strip()],
+        policies=[p.strip() for p in args.policies.split(",") if p.strip()],
     )
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

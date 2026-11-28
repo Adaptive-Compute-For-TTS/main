@@ -115,6 +115,22 @@ example, `pca8(potion8m.raw)` ships 0.94 MB instead of the 30 MB full table.
 To run the parity test, set `NFE_STATIC_EMBEDDINGS_DIR` to that directory and
 install `tokenizers`; otherwise the test is skipped.
 
+Mean NFE is not the cost on dots.tts's optimized path. Its DiT KV cache only
+fits one NFE, so each change of NFE between patches costs about 8× a patch
+(see `gpu-executor/docs/design/mixed-nfe-kv-cache.md`). The report therefore
+also prices each request's patches in order (`experiments/sequence_cost.py`):
+
+- `--cost-models`: `nfe` (plain mean NFE), `optimized-rtx5060` and
+  `eager-rtx5060` (measured per patch and per switch; other NFEs are estimated
+  and marked `*`).
+- `--policies`: `per_patch`, `min_runR` (switch up at once, down only after R
+  patches) and `request_max` (one NFE per request, no switches).
+
+The policy and threshold are chosen on validation as the fastest estimate that
+keeps fixed NFE's pass rate on the same patches, then scored once on test.
+Patch labels come from one fixed starting state per patch, so sequence pass
+rates are estimates.
+
 `--legacy-dry-run` builds provisional request-level labels from the 54-prompt
 sweep (`quality-evals/.../clips_arush.csv`). Clips cut off by the length cap
 count as unknown, and a clip passes if its WER is at most 0.1. These labels are

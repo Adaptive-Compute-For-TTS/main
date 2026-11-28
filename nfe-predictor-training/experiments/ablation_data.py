@@ -32,6 +32,11 @@ class AblationExample:
     patch_index: int
     targets: tuple[float, ...]  # 1.0 pass / 0.0 fail where observed
     mask: tuple[int, ...]       # 1 = observed, 0 = unknown
+    sequence_id: str = ""       # one generated request; patches are ordered by patch_index
+
+    def __post_init__(self):
+        if not self.sequence_id:
+            object.__setattr__(self, "sequence_id", self.example_id)
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,16 @@ def _check_nonempty_splits(dataset: AblationDataset) -> AblationDataset:
     return dataset
 
 
+_SEQUENCE_KEYS = ("experiment_id", "prompt_id", "speaker_id", "seed",
+                  "checkpoint_id", "conditioning_id", "solver")
+
+
+def _sequence_id(target: PatchTarget) -> str:
+    """Patches from the same generated request share these generation settings."""
+    first = target.observations[0] if target.observations else {}
+    return "|".join(str(first.get(k)) for k in _SEQUENCE_KEYS)
+
+
 def from_patch_targets(
     targets: Sequence[PatchTarget], *, assignments: dict[str, str] | None = None,
     seed: int = SPLIT_SEED, ratios=SPLIT_RATIOS,
@@ -76,7 +91,7 @@ def from_patch_targets(
         raise ValueError(f"need exactly one observed label protocol, got {sorted(protocols)}")
     examples = tuple(
         AblationExample(t.comparison_id, t.prompt_id, t.prompt_family_id, t.text,
-                        t.patch_index, t.targets, t.mask)
+                        t.patch_index, t.targets, t.mask, _sequence_id(t))
         for t in targets
     )
     conclusive = all(t.schema_version == EXPERIMENT_SCHEMA_VERSION for t in targets)
