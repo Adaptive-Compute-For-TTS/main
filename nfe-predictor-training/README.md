@@ -76,6 +76,31 @@ model_input = features_to_vector(features)
 The optional `context` argument is reserved for future speaker metadata or
 embedding features. Basic extraction does not currently use it.
 
+## Feature ablation
+
+`experiments/feature_ablation.py` compares text representations on the same
+family-grouped splits and seeds. For each one it reports test Brier score and
+loss, budget selection (a threshold chosen on validation, then applied to test:
+mean NFE and pass rate against a fixed budget on the same patches), and cost
+(input dimensions, extra numbers to ship, per-text extraction time).
+
+Representations are spec strings (`experiments/feature_sets.py`): `text5`,
+`rich` (extra handcrafted counts), `a+b` to concatenate, and `pcaK(spec)` for
+PCA fitted on training texts only, e.g. `pca4(text5+rich)`. Each one is fitted
+on training texts and then frozen, and `patch_index` is appended as in the
+baseline.
+
+```bash
+./.venv/bin/python -m experiments.feature_ablation --observations reviewed.jsonl --out report.json
+./.venv/bin/python -m experiments.feature_ablation --legacy-dry-run   # harness check only
+```
+
+`--legacy-dry-run` builds provisional request-level labels from the 54-prompt
+sweep (`quality-evals/.../clips_arush.csv`). Clips cut off by the length cap
+count as unknown, and a clip passes if its WER is at most 0.1. These labels are
+never saved, and the report says `"conclusive": false`. Use it to check the
+harness, not to compare features.
+
 ## Tests
 
 Use the setup/test commands above from this directory. To run just the CPU
