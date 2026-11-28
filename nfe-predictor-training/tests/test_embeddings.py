@@ -92,6 +92,31 @@ def test_embeddings_compose_in_specs(tiny_model_dir, synthetic_examples):
     assert [fs["dims"] for fs in report["feature_sets"]] == [3, 2]
 
 
+def test_pca_folds_into_a_smaller_identical_table(tiny_model_dir):
+    model = StaticEmbeddings.load(tiny_model_dir, name="tiny")
+    rng = np.random.default_rng(0)
+    model = StaticEmbeddings(model.name, model.tokenizer, rng.normal(size=model.table.shape), normalize=True)
+    fitters = with_static_embeddings({"tiny": model})
+    train = ["hello world", "hello, unbelievable!", "cafe world!", "un world", "hello cafe"]
+    texts = [*train, "", "xyz", "world, world, hello"]
+
+    folded = build("pca2(tiny.raw)", fitters)(train)
+    assert folded.token_mean is not None and folded.shipped_params == len(VOCAB) * 2 + 2
+    # Same numbers as standardizing and projecting the raw mean afterwards.
+    raw = StaticEmbeddings(model.name, model.tokenizer, model.table, normalize=False)
+    x = np.stack([raw.embed(t) for t in train])
+    mean, std = x.mean(axis=0), np.where(x.std(axis=0) == 0, 1.0, x.std(axis=0))
+    _, _, vt = np.linalg.svd((x - mean) / std, full_matrices=False)
+    signs = np.where(vt[np.arange(2), np.abs(vt[:2]).argmax(axis=1)] < 0, -1.0, 1.0)
+    expected = ((np.stack([raw.embed(t) for t in texts]) - mean) / std) @ (vt[:2] * signs[:, None]).T
+    assert np.allclose(folded.matrix(texts), expected)
+
+    # L2-normalized output is not affine in the table, so it keeps the full table.
+    unfolded = build("pca2(tiny)", fitters)(train)
+    assert unfolded.token_mean is None
+    assert unfolded.shipped_params == len(VOCAB) * 3 + 2 * 3 + 3 + 3
+
+
 REAL_MODEL = os.environ.get("NFE_STATIC_EMBEDDINGS_DIR")
 
 

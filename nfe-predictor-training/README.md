@@ -106,6 +106,12 @@ hf download minishlab/potion-base-8M --local-dir ~/models/potion-base-8M
   --features "text5,potion8m,pca8(potion8m),text5+pca4(potion8m)"
 ```
 
+Each model is also registered as `NAME.raw`, which skips the final L2
+normalization. Its output is then a plain average of token vectors, so
+`pcaK(NAME.raw)` is folded into a `[vocab, K]` table with identical output. For
+example, `pca8(potion8m.raw)` ships 0.94 MB instead of the 30 MB full table.
+`shipped_params` in the report reflects this.
+
 To run the parity test, set `NFE_STATIC_EMBEDDINGS_DIR` to that directory and
 install `tokenizers`; otherwise the test is skipped.
 

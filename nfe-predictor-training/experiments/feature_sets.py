@@ -15,14 +15,14 @@ base names (features/embeddings.py) and compose with + and pcaK(...) unchanged.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 import string
 
 import numpy as np
 
 from features import FEATURE_NAMES, extract_features
-from features.embeddings import StaticEmbeddings
+from features.embeddings import StaticEmbeddings, TokenMeanTable
 
 
 @dataclass(frozen=True)
@@ -32,9 +32,12 @@ class FittedFeatures:
     spec: str
     names: tuple[str, ...]
     transform: Callable[[str], np.ndarray]
-    # Numbers the inference bundle would need besides the final mean/std
-    # (PCA components, centring). Excludes any external model weights.
+    # Numbers the inference bundle would need besides the final mean/std:
+    # PCA components and centring, and any token table.
     shipped_params: int
+    # Set only when the output is exactly a mean of token-table rows, so an
+    # affine step on top (pcaK) can be folded into a smaller table.
+    token_mean: TokenMeanTable | None = None
 
     def __call__(self, text: str) -> np.ndarray:
         x = np.asarray(self.transform(text), dtype=np.float64)
@@ -120,21 +123,28 @@ def static_embedding_fitter(model: StaticEmbeddings) -> Fitter:
     """A base fitter for a loaded static embedding model (nothing to fit).
 
     shipped_params counts the whole token table: what serving would have to load.
+    Without L2 normalization the output is a plain token mean, so pcaK on top folds.
     """
     def fit(train_texts: Sequence[str]) -> FittedFeatures:
         del train_texts
         return FittedFeatures(model.name, tuple(f"{model.name}:{i}" for i in range(model.dim)),
-                              model.embed, model.table.size)
+                              model.embed, model.table.size,
+                              None if model.normalize else model.token_mean)
     return fit
 
 
 def with_static_embeddings(models: Mapping[str, StaticEmbeddings],
                            base: Mapping[str, Fitter] = BASE_FITTERS) -> dict[str, Fitter]:
-    """A new base-fitter mapping with each model available under its key."""
-    clashes = set(models) & set(base)
+    """A new base-fitter mapping: each model as NAME (its own config) and NAME.raw
+    (no L2 normalization, so pcaK(NAME.raw) ships a [vocab, K] table)."""
+    variants = {}
+    for name, model in models.items():
+        variants[name] = model
+        variants[f"{name}.raw"] = replace(model, name=f"{name}.raw", normalize=False)
+    clashes = set(variants) & set(base)
     if clashes:
         raise ValueError(f"embedding names clash with built-in feature sets: {sorted(clashes)}")
-    return {**base, **{name: static_embedding_fitter(m) for name, m in models.items()}}
+    return {**base, **{name: static_embedding_fitter(m) for name, m in variants.items()}}
 
 
 # --- combinators ---------------------------------------------------------------------------
@@ -169,9 +179,17 @@ def _pca(base: Fitter, k: int) -> Fitter:
         pivots = components[np.arange(k), np.abs(components).argmax(axis=1)]
         components = components * np.where(pivots < 0, -1.0, 1.0)[:, None]
         spec = f"pca{k}({inner.spec})"
+        names = tuple(f"{spec}:pc{i}" for i in range(k))
+
+        def project(rows: np.ndarray) -> np.ndarray:
+            return ((rows - mean) / std) @ components.T
+
+        if inner.token_mean is not None:
+            # Fold the projection into the table: same output, [vocab, k] to ship.
+            folded = inner.token_mean.map_affine(project)
+            return FittedFeatures(spec, names, folded, folded.size, folded)
         return FittedFeatures(
-            spec, tuple(f"{spec}:pc{i}" for i in range(k)),
-            lambda t: ((inner(t) - mean) / std) @ components.T,
+            spec, names, lambda t: project(inner(t)[None, :])[0],
             inner.shipped_params + components.size + mean.size + std.size,
         )
     return fit

@@ -137,6 +137,33 @@ class WordPiece:
 # --- static embedding model --------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class TokenMeanTable:
+    """text -> mean of its known tokens' rows; `empty` when it has none.
+
+    Because the output is a mean (weights sum to 1), any row-wise affine map f
+    satisfies f(mean(rows)) == mean(f(rows)). `map_affine` uses this to fold
+    standardization and PCA into the table itself, so serving ships [vocab, K].
+    """
+
+    tokenizer: WordPiece
+    table: np.ndarray  # [vocab, dim]
+    empty: np.ndarray  # [dim]
+
+    def __call__(self, text: str) -> np.ndarray:
+        unk = self.tokenizer.vocab[self.tokenizer.unk_token]
+        ids = [i for i in self.tokenizer.encode(text) if i != unk]
+        return self.table[ids].mean(axis=0) if ids else self.empty
+
+    def map_affine(self, fn) -> "TokenMeanTable":
+        """A new table with fn (row-wise affine: [n, dim] -> [n, k]) applied to every row."""
+        return TokenMeanTable(self.tokenizer, fn(self.table), fn(self.empty[None, :])[0])
+
+    @property
+    def size(self) -> int:
+        return self.table.size + self.empty.size
+
+
+@dataclass(frozen=True)
 class StaticEmbeddings:
     name: str
     tokenizer: WordPiece
@@ -161,13 +188,13 @@ class StaticEmbeddings:
     def dim(self) -> int:
         return self.table.shape[1]
 
+    @property
+    def token_mean(self) -> TokenMeanTable:
+        return TokenMeanTable(self.tokenizer, self.table, np.zeros(self.dim))
+
     def embed(self, text: str) -> np.ndarray:
         """Mean of the token vectors ([UNK] dropped, as model2vec does); zeros for no tokens."""
-        unk = self.tokenizer.vocab[self.tokenizer.unk_token]
-        ids = [i for i in self.tokenizer.encode(text) if i != unk]
-        if not ids:
-            return np.zeros(self.dim)
-        vector = self.table[ids].mean(axis=0)
+        vector = self.token_mean(text)
         if self.normalize:
             norm = np.linalg.norm(vector)
             vector = vector / norm if norm > 0 else vector
