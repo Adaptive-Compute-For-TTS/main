@@ -95,6 +95,20 @@ baseline.
 ./.venv/bin/python -m experiments.feature_ablation --legacy-dry-run   # harness check only
 ```
 
+Static embeddings (`features/embeddings.py`, model2vec format) need numpy
+only: the WordPiece tokenizer is reimplemented and checked against the
+`tokenizers` library. Download a model outside the repo and give it a name:
+
+```bash
+hf download minishlab/potion-base-8M --local-dir ~/models/potion-base-8M
+./.venv/bin/python -m experiments.feature_ablation --legacy-dry-run \
+  --static-embeddings potion8m=$HOME/models/potion-base-8M \
+  --features "text5,potion8m,pca8(potion8m),text5+pca4(potion8m)"
+```
+
+To run the parity test, set `NFE_STATIC_EMBEDDINGS_DIR` to that directory and
+install `tokenizers`; otherwise the test is skipped.
+
 `--legacy-dry-run` builds provisional request-level labels from the 54-prompt
 sweep (`quality-evals/.../clips_arush.csv`). Clips cut off by the length cap
 count as unknown, and a clip passes if its WER is at most 0.1. These labels are

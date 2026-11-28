@@ -22,6 +22,7 @@ import string
 import numpy as np
 
 from features import FEATURE_NAMES, extract_features
+from features.embeddings import StaticEmbeddings
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,27 @@ def _fit_rich(train_texts: Sequence[str]) -> FittedFeatures:
 
 
 BASE_FITTERS: Mapping[str, Fitter] = {"text5": _fit_text5, "rich": _fit_rich}
+
+
+def static_embedding_fitter(model: StaticEmbeddings) -> Fitter:
+    """A base fitter for a loaded static embedding model (nothing to fit).
+
+    shipped_params counts the whole token table: what serving would have to load.
+    """
+    def fit(train_texts: Sequence[str]) -> FittedFeatures:
+        del train_texts
+        return FittedFeatures(model.name, tuple(f"{model.name}:{i}" for i in range(model.dim)),
+                              model.embed, model.table.size)
+    return fit
+
+
+def with_static_embeddings(models: Mapping[str, StaticEmbeddings],
+                           base: Mapping[str, Fitter] = BASE_FITTERS) -> dict[str, Fitter]:
+    """A new base-fitter mapping with each model available under its key."""
+    clashes = set(models) & set(base)
+    if clashes:
+        raise ValueError(f"embedding names clash with built-in feature sets: {sorted(clashes)}")
+    return {**base, **{name: static_embedding_fitter(m) for name, m in models.items()}}
 
 
 # --- combinators ---------------------------------------------------------------------------

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import json
 from pathlib import Path
 import statistics
@@ -35,7 +35,8 @@ from experiments.ablation_data import (
 from experiments.ablation_train import (
     DEFAULT_THRESHOLDS, SplitArrays, fit_standardizer, oracle_mean_nfe, score_seed, train_mlp,
 )
-from experiments.feature_sets import FittedFeatures, build
+from experiments.feature_sets import BASE_FITTERS, Fitter, FittedFeatures, build, with_static_embeddings
+from features.embeddings import StaticEmbeddings
 from training.contracts import FALLBACK_NFE, REFERENCE_NFE
 from training.targets import build_targets, read_observations
 from training.train import TrainingConfig
@@ -108,8 +109,9 @@ def _summarize(seed_results: Sequence[dict]) -> dict:
 def run_feature_set(
     dataset: AblationDataset, spec: str, seeds: Sequence[int], config: TrainingConfig, *,
     fixed_nfe: int, fallback_nfe: int, thresholds: Sequence[float] = DEFAULT_THRESHOLDS,
+    base_fitters: Mapping[str, Fitter] = BASE_FITTERS,
 ) -> dict:
-    fitted = build(spec)(_unique_texts(dataset.split("train")))
+    fitted = build(spec, base_fitters)(_unique_texts(dataset.split("train")))
     arrays = _split_arrays(fitted, dataset)
     seed_results = []
     for seed in seeds:
@@ -126,6 +128,7 @@ def run_ablation(
     dataset: AblationDataset, specs: Sequence[str] = DEFAULT_SPECS, seeds: Sequence[int] = (0, 1, 2),
     config: TrainingConfig = TrainingConfig(), *, fixed_nfe: int = REFERENCE_NFE,
     fallback_nfe: int = FALLBACK_NFE, thresholds: Sequence[float] = DEFAULT_THRESHOLDS,
+    base_fitters: Mapping[str, Fitter] = BASE_FITTERS,
 ) -> dict:
     if not seeds:
         raise ValueError("need at least one seed")
@@ -145,7 +148,8 @@ def run_ablation(
         "test_oracle_mean_nfe": oracle_mean_nfe(test, dataset.budgets, fallback_nfe),
         "seeds": list(seeds), "training_config": asdict(config), "thresholds": list(thresholds),
         "feature_sets": [run_feature_set(dataset, s, seeds, config, fixed_nfe=fixed_nfe,
-                                         fallback_nfe=fallback_nfe, thresholds=thresholds)
+                                         fallback_nfe=fallback_nfe, thresholds=thresholds,
+                                         base_fitters=base_fitters)
                          for s in specs],
     }
 
@@ -184,6 +188,18 @@ def _load(args) -> AblationDataset:
     return legacy_utterance_dry_run(args.legacy_clips, args.legacy_split, wer_max=args.wer_max)
 
 
+def _load_embeddings(pairs: Sequence[str]) -> dict[str, StaticEmbeddings]:
+    models = {}
+    for pair in pairs:
+        name, sep, directory = pair.partition("=")
+        if not sep or not name.strip() or not directory.strip():
+            raise SystemExit(f"--static-embeddings expects NAME=DIR, got {pair!r}")
+        if name in models:
+            raise SystemExit(f"--static-embeddings name {name!r} given twice")
+        models[name] = StaticEmbeddings.load(directory, name=name)
+    return models
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     source = parser.add_mutually_exclusive_group(required=True)
@@ -198,6 +214,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
     parser.add_argument("--fixed-nfe", type=int, default=REFERENCE_NFE)
     parser.add_argument("--fallback-nfe", type=int, default=FALLBACK_NFE)
+    parser.add_argument("--static-embeddings", action="append", default=[], metavar="NAME=DIR",
+                        help="add a model2vec directory as base feature set NAME (repeatable)")
     parser.add_argument("--out", type=Path, help="write the full JSON report here")
     args = parser.parse_args(argv)
 
@@ -205,6 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _load(args), [s for s in args.features.split(",") if s.strip()],
         [int(s) for s in args.seeds.split(",")], TrainingConfig(epochs=args.epochs),
         fixed_nfe=args.fixed_nfe, fallback_nfe=args.fallback_nfe,
+        base_fitters=with_static_embeddings(_load_embeddings(args.static_embeddings)),
     )
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
